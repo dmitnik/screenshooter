@@ -23,6 +23,7 @@ add_library(screenshooter_core STATIC
     src/export/share_service.cpp
     src/platform/dpi.cpp
     src/platform/geometry.cpp
+    src/performance/metrics.cpp
     src/settings/settings_store.cpp
 )
 

@@ -3,6 +3,7 @@
 #include "editor/document_session.h"
 #include "editor/command_history.h"
 #include "export/share_service.h"
+#include "performance/metrics.h"
 
 #include <windows.h>
 
@@ -102,6 +103,8 @@ private:
     platform::PixelPoint text_origin_{};
     std::optional<Annotation> object_clipboard_;
     exporting::ShareService share_service_;
+    performance::MetricTimer first_paint_timer_;
+    bool first_paint_logged_{};
 };
 
 }  // namespace screenshooter::editor

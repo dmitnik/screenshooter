@@ -4,6 +4,7 @@
 #include "overlay/selection_overlay.h"
 #include "tray/tray_host.h"
 #include "settings/settings_store.h"
+#include "performance/metrics.h"
 
 #include <windows.h>
 
@@ -52,6 +53,7 @@ private:
     CaptureRequest capture_request_{CaptureRequest::area};
     std::optional<platform::PixelRect> requested_bounds_;
     std::jthread capture_worker_;
+    performance::MetricTimer capture_timer_;
     std::unique_ptr<overlay::SelectionOverlay> overlay_;
     std::unordered_map<HWND, std::unique_ptr<editor::EditorWindow>> editors_;
     std::vector<int> hotkey_ids_;

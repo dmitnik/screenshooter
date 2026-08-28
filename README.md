@@ -1,34 +1,81 @@
 # Screenshooter
 
-Screenshooter is a native, local-only screenshot capture and editing application
-for Windows 10 version 1903 and newer. The approved requirements are documented
-in `PLAN_WINDOWS_SCREENSHOT_APP.md`; engineering delivery is tracked in
-`IMPLEMENTATION_PLAN_WINDOWS_SCREENSHOT_APP.md`.
+Screenshooter — нативное локальное приложение для снимков экрана на Windows 10
+1903+ и Windows 11. Оно работает одним процессом, не использует сеть или облако
+и распространяется как portable `screenshooter.exe`.
 
-## Current status
+## Возможности текущей portable-версии
 
-Implementation is in progress. The repository currently contains the foundational
-Win32 application, platform primitives, automated tests, and technical spikes
-required before the first usable capture flow.
+- системный трей и глобальные сочетания `Ctrl+Shift+1`, `Ctrl+Shift+3`,
+  `Ctrl+Shift+4`;
+- захват области, окна под курсором, монитора под курсором и всех мониторов;
+- отдельное окно и независимая сессия для каждого снимка;
+- выбор, перемещение, scale handle, Delete, keyboard nudge и Undo/Redo;
+- прямоугольник, линия, эллипс, звезда, стрелки, маркер и Unicode-текст;
+- Gaussian Blur и неразрушающий Crop;
+- Copy в `CF_DIBV5` + `PNG` с закрытием только текущего окна;
+- Save As PNG/JPEG, открытие файлов, drag-and-drop и вставка изображений;
+- системная панель Windows «Поделиться»;
+- настройки в `HKCU\Software\Screenshooter`, включая папку сохранения по
+  умолчанию и автозапуск пользователя.
 
-## Prerequisites
+Курсор в снимок не включается. Собственные окна помечаются
+`WDA_EXCLUDEFROMCAPTURE` на поддерживаемых версиях Windows.
 
-- Windows 10 version 1903 or newer, x64;
-- Visual Studio Build Tools 2022 with the C++ workload and Windows SDK;
-- CMake 3.28 or newer;
-- Git, used by CMake to fetch the pinned test-only Catch2 dependency.
+## Быстрый старт
 
-The application has no runtime network dependency. Catch2 is fetched only while
-configuring test builds and is not linked into `screenshooter.exe`.
+1. Запустите `screenshooter.exe` без прав администратора.
+2. Нажмите `Ctrl+Shift+1` и выделите область либо выберите режим в меню трея.
+3. Отредактируйте снимок.
+4. Нажмите `Копировать`, `Сохранить` или `Поделиться`.
 
-## Build
+В меню трея можно выбрать и открыть папку сохранения по умолчанию. Путь хранится
+в значении `SaveFolder` пользовательской ветки реестра.
 
-Initialize an x64 Visual Studio developer environment, then run:
+## Сборка
+
+Требуются Windows x64, Visual Studio Build Tools 2022 с C++ workload, Windows SDK,
+CMake 3.28+ и Git. В настроенном x64 Developer environment:
 
 ```text
-cmake --preset debug
-cmake --build --preset debug
-ctest --preset debug
+cmake --preset release
+cmake --build --preset release
+ctest --preset release
 ```
 
-Release artifacts are built with the `release` presets.
+На текущей машине portable EXE собирается с `/MT`, поэтому отдельный Visual C++
+Runtime пользователю не нужен. Catch2 загружается только для сборки тестов и в EXE
+не входит.
+
+## Проверенные показатели
+
+Windows 11 x64, экран 1920 × 1080, Release, 2026-08-28:
+
+| Проверка | Результат |
+|---|---:|
+| Idle private bytes | 1,88 МБ |
+| Idle CPU за 10 секунд | 0 мс |
+| Горячая клавиша → overlay области | 116 мс |
+| Горячая клавиша → редактор монитора | 142 мс |
+| 100 capture/open/close циклов | 25,3 с |
+| Handles после 100/200 циклов | 203 / 202 |
+| Private bytes после 100/200 циклов | 14,82 / 17,83 МБ |
+| Release EXE | около 0,3 МБ |
+| CTest Debug/Release | 28/28 пройдено |
+
+Метрики capture и первого paint дополнительно выводятся локально через
+`OutputDebugString`; телеметрия и сетевые запросы отсутствуют.
+
+## Известные ограничения первой portable-версии
+
+- Window capture использует DWM bounds и frozen visible-region fallback; если WGC
+  недоступен, перекрывающее окно может попасть в снимок.
+- Печать, подписанный installer, полноценное переназначение сочетаний и отдельная
+  проверка Windows 10 остаются выпускными задачами после portable-версии.
+- Blur предназначен для визуального скрытия и не гарантирует необратимое удаление
+  чувствительных данных.
+- EXE пока не подписан сертификатом издателя.
+
+Утверждённые требования находятся в `PLAN_WINDOWS_SCREENSHOT_APP.md`, инженерный
+план — в `IMPLEMENTATION_PLAN_WINDOWS_SCREENSHOT_APP.md`, ручные протоколы — в
+`tests/manual/`.

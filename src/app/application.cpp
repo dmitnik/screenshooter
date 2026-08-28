@@ -174,6 +174,7 @@ void Application::StartCapture(const CaptureRequest request) {
             bounds.left, bounds.top, bounds.right, bounds.bottom};
     }
     capture_state_ = CaptureState::capturing;
+    capture_timer_.Restart();
     const HWND receiver = host_window_;
     capture_worker_ = std::jthread([receiver] {
         capture::CaptureService service;
@@ -193,6 +194,7 @@ void Application::StartCapture(const CaptureRequest request) {
 }
 
 void Application::HandleCaptureReady(const WPARAM payload) {
+    performance::LogMetric(L"capture ready", capture_timer_.ElapsedMilliseconds());
     std::unique_ptr<capture::CaptureOutcome> outcome(
         reinterpret_cast<capture::CaptureOutcome*>(payload)
     );
@@ -476,6 +478,16 @@ LRESULT Application::HandleMessage(
         }
         return 0;
     case WM_QUERYENDSESSION:
+        return TRUE;
+    case WM_DISPLAYCHANGE:
+        if (overlay_ != nullptr) {
+            overlay_->Cancel();
+        }
+        return 0;
+    case WM_POWERBROADCAST:
+        if (w_param == PBT_APMSUSPEND && overlay_ != nullptr) {
+            overlay_->Cancel();
+        }
         return TRUE;
     case WM_ENDSESSION:
         if (w_param != 0) {

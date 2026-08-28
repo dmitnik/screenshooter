@@ -108,6 +108,7 @@ bool EditorWindow::CreateNativeWindow() {
     if (window_ == nullptr) {
         return false;
     }
+    ::SetWindowDisplayAffinity(window_, WDA_EXCLUDEFROMCAPTURE);
     CreateControls();
     LayoutControls();
     ::ShowWindow(window_, SW_SHOWNORMAL);
@@ -327,6 +328,11 @@ void EditorWindow::Paint() {
         ::DeleteObject(crop_pen);
     }
     ::EndPaint(window_, &paint);
+    if (!first_paint_logged_) {
+        first_paint_logged_ = true;
+        performance::LogMetric(
+            L"editor first paint", first_paint_timer_.ElapsedMilliseconds());
+    }
 }
 
 void EditorWindow::ZoomAt(const POINT client_point, const float factor) {
