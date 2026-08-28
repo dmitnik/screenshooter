@@ -1,0 +1,12 @@
+#pragma code_page(65001)
+
+#include "resource.h"
+#include <windows.h>
+
+CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "app.manifest"
+
+STRINGTABLE
+BEGIN
+    IDS_APP_TITLE "Screenshooter"
+    IDS_WINDOW_CLASS "Screenshooter.MainWindow"
+END
