@@ -8,10 +8,20 @@
 
 namespace screenshooter::settings {
 
+struct HotkeyBinding {
+    UINT modifiers{};
+    UINT virtual_key{};
+
+    friend bool operator==(const HotkeyBinding&, const HotkeyBinding&) = default;
+};
+
 struct Settings {
     bool hotkeys_enabled{true};
     bool autostart_enabled{false};
     std::filesystem::path save_folder;
+    HotkeyBinding area_hotkey{MOD_CONTROL | MOD_SHIFT, '1'};
+    HotkeyBinding monitor_hotkey{MOD_CONTROL | MOD_SHIFT, '3'};
+    HotkeyBinding window_hotkey{MOD_CONTROL | MOD_SHIFT, '4'};
 };
 
 class SettingsStore final {

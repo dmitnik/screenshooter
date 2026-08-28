@@ -221,9 +221,31 @@ void EditorWindow::LayoutControls() {
 
 void EditorWindow::Paint() {
     PAINTSTRUCT paint{};
-    HDC dc = ::BeginPaint(window_, &paint);
+    HDC paint_dc = ::BeginPaint(window_, &paint);
     RECT client{};
     ::GetClientRect(window_, &client);
+    HDC buffer_dc = ::CreateCompatibleDC(paint_dc);
+    HBITMAP buffer_bitmap = ::CreateCompatibleBitmap(
+        paint_dc, std::max(1L, client.right), std::max(1L, client.bottom));
+    HGDIOBJ previous_bitmap = nullptr;
+    const bool buffered = buffer_dc != nullptr && buffer_bitmap != nullptr;
+    if (buffered) {
+        previous_bitmap = ::SelectObject(buffer_dc, buffer_bitmap);
+    }
+    HDC dc = buffered ? buffer_dc : paint_dc;
+    const auto finish_paint = [&] {
+        if (buffered) {
+            ::BitBlt(paint_dc, 0, 0, client.right, client.bottom, buffer_dc, 0, 0, SRCCOPY);
+            ::SelectObject(buffer_dc, previous_bitmap);
+        }
+        if (buffer_bitmap != nullptr) {
+            ::DeleteObject(buffer_bitmap);
+        }
+        if (buffer_dc != nullptr) {
+            ::DeleteDC(buffer_dc);
+        }
+        ::EndPaint(window_, &paint);
+    };
     const int bar = platform::DipToPixels(kBarHeightDip, ::GetDpiForWindow(window_));
     const int toolbar = platform::DipToPixels(kToolbarHeightDip, ::GetDpiForWindow(window_));
     RECT canvas = client;
@@ -244,7 +266,7 @@ void EditorWindow::Paint() {
 
     const auto rendered = DocumentRenderer::Render(session_.model, false);
     if (rendered.empty()) {
-        ::EndPaint(window_, &paint);
+        finish_paint();
         return;
     }
 
@@ -319,7 +341,26 @@ void EditorWindow::Paint() {
             static_cast<LONG>(std::lround(offset_x_ + (crop.right * scale_))),
             static_cast<LONG>(std::lround(offset_y_ + (crop.bottom * scale_))),
         };
-        HPEN crop_pen = ::CreatePen(PS_DASH, 2, RGB(255, 255, 255));
+        const RECT image_rect{
+            static_cast<LONG>(std::lround(offset_x_)),
+            static_cast<LONG>(std::lround(offset_y_)),
+            static_cast<LONG>(std::lround(offset_x_ + (rendered.width * scale_))),
+            static_cast<LONG>(std::lround(offset_y_ + (rendered.height * scale_))),
+        };
+        HBRUSH mask = ::CreateSolidBrush(RGB(72, 78, 88));
+        const RECT outside[]{
+            {image_rect.left, image_rect.top, image_rect.right, crop_rect.top},
+            {image_rect.left, crop_rect.bottom, image_rect.right, image_rect.bottom},
+            {image_rect.left, crop_rect.top, crop_rect.left, crop_rect.bottom},
+            {crop_rect.right, crop_rect.top, image_rect.right, crop_rect.bottom},
+        };
+        for (const RECT& area : outside) {
+            if (area.right > area.left && area.bottom > area.top) {
+                ::FillRect(dc, &area, mask);
+            }
+        }
+        ::DeleteObject(mask);
+        HPEN crop_pen = ::CreatePen(PS_SOLID, 2, RGB(26, 115, 232));
         HGDIOBJ old_pen = ::SelectObject(dc, crop_pen);
         HGDIOBJ old_brush = ::SelectObject(dc, ::GetStockObject(HOLLOW_BRUSH));
         ::Rectangle(dc, crop_rect.left, crop_rect.top, crop_rect.right, crop_rect.bottom);
@@ -327,7 +368,7 @@ void EditorWindow::Paint() {
         ::SelectObject(dc, old_pen);
         ::DeleteObject(crop_pen);
     }
-    ::EndPaint(window_, &paint);
+    finish_paint();
     if (!first_paint_logged_) {
         first_paint_logged_ = true;
         performance::LogMetric(
@@ -470,7 +511,13 @@ bool EditorWindow::IsCanvasPoint(const POINT client_point) const noexcept {
     const UINT dpi = ::GetDpiForWindow(window_);
     const int top = platform::DipToPixels(kToolbarHeightDip, dpi);
     const int bottom = client.bottom - platform::DipToPixels(kBarHeightDip, dpi);
-    return client_point.y >= top && client_point.y < bottom;
+    if (client_point.y < top || client_point.y >= bottom) {
+        return false;
+    }
+    const auto document = DocumentPoint(client_point);
+    return document.x >= 0 && document.y >= 0 &&
+        document.x < session_.model.source().width &&
+        document.y < session_.model.source().height;
 }
 
 void EditorWindow::BeginDocumentAction(const POINT client_point) {
@@ -568,7 +615,15 @@ void EditorWindow::UpdateDocumentAction(const POINT client_point) {
     if (!dragging_ && !creating_ && !resizing_ && !crop_drafting_) {
         return;
     }
-    const auto current = DocumentPoint(client_point);
+    auto current = DocumentPoint(client_point);
+    const auto& source = session_.model.source();
+    if (crop_drafting_) {
+        current.x = std::clamp(current.x, 0, source.width);
+        current.y = std::clamp(current.y, 0, source.height);
+    } else {
+        current.x = std::clamp(current.x, 0, source.width - 1);
+        current.y = std::clamp(current.y, 0, source.height - 1);
+    }
     if (crop_drafting_) {
         session_.model.SetCrop(platform::Normalize(action_anchor_, current));
     } else if (resizing_) {

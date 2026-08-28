@@ -14,6 +14,7 @@ enum class TrayCommand {
     open_image,
     choose_save_folder,
     open_save_folder,
+    configure_hotkeys,
     toggle_autostart,
     exit_application,
 };

@@ -26,5 +26,6 @@ struct PixelBuffer {
     const PixelBuffer& source,
     platform::PixelRect source_rect
 );
+[[nodiscard]] bool ContainsVisibleRgb(const PixelBuffer& source) noexcept;
 
 }  // namespace screenshooter::capture

@@ -14,6 +14,7 @@ constexpr UINT kAutostartCommand = 2006;
 constexpr UINT kWindowCommand = 2007;
 constexpr UINT kMonitorCommand = 2008;
 constexpr UINT kAllCommand = 2009;
+constexpr UINT kHotkeysCommand = 2010;
 
 }  // namespace
 
@@ -74,14 +75,15 @@ TrayCommand TrayHost::ShowContextMenu() const {
         return TrayCommand::none;
     }
 
-    ::AppendMenuW(menu, MF_STRING, kCaptureCommand, L"Снимок области\tCtrl+Shift+1");
-    ::AppendMenuW(menu, MF_STRING, kWindowCommand, L"Окно под курсором\tCtrl+Shift+4");
-    ::AppendMenuW(menu, MF_STRING, kMonitorCommand, L"Монитор под курсором\tCtrl+Shift+3");
+    ::AppendMenuW(menu, MF_STRING, kCaptureCommand, L"Снимок области");
+    ::AppendMenuW(menu, MF_STRING, kWindowCommand, L"Окно под курсором");
+    ::AppendMenuW(menu, MF_STRING, kMonitorCommand, L"Монитор под курсором");
     ::AppendMenuW(menu, MF_STRING, kAllCommand, L"Все мониторы");
     ::AppendMenuW(menu, MF_STRING, kOpenCommand, L"Открыть изображение…");
     ::AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     ::AppendMenuW(menu, MF_STRING, kChooseFolderCommand, L"Выбрать папку сохранения…");
     ::AppendMenuW(menu, MF_STRING, kOpenFolderCommand, L"Открыть папку сохранения");
+    ::AppendMenuW(menu, MF_STRING, kHotkeysCommand, L"Настроить горячие клавиши…");
     ::AppendMenuW(menu, MF_STRING, kAutostartCommand, L"Переключить автозапуск");
     ::AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     ::AppendMenuW(menu, MF_STRING, kExitCommand, L"Выход");
@@ -116,6 +118,9 @@ TrayCommand TrayHost::ShowContextMenu() const {
     }
     if (command == kOpenFolderCommand) {
         return TrayCommand::open_save_folder;
+    }
+    if (command == kHotkeysCommand) {
+        return TrayCommand::configure_hotkeys;
     }
     if (command == kAutostartCommand) {
         return TrayCommand::toggle_autostart;

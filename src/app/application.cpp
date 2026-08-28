@@ -5,6 +5,7 @@
 #include "editor/document_session.h"
 #include "export/share_service.h"
 #include "export/image_file_service.h"
+#include "settings/settings_dialog.h"
 
 #include <commctrl.h>
 #include <dwmapi.h>
@@ -31,11 +32,7 @@ Application::Application(const HINSTANCE instance) noexcept
     : instance_(instance) {}
 
 Application::~Application() {
-    if (host_window_ != nullptr) {
-        for (const int id : hotkey_ids_) {
-            ::UnregisterHotKey(host_window_, id);
-        }
-    }
+    UnregisterHotkeys();
     tray_.Shutdown();
 }
 
@@ -44,7 +41,7 @@ int Application::Run(const int) {
     settings_ = settings_store_.Load();
     INITCOMMONCONTROLSEX controls{
         .dwSize = sizeof(INITCOMMONCONTROLSEX),
-        .dwICC = ICC_STANDARD_CLASSES,
+        .dwICC = ICC_STANDARD_CLASSES | ICC_HOTKEY_CLASS,
     };
     ::InitCommonControlsEx(&controls);
 
@@ -60,21 +57,7 @@ int Application::Run(const int) {
         ::DestroyWindow(host_window_);
         return 1;
     }
-    bool hotkey_failure = false;
-    if (settings_.hotkeys_enabled) {
-        const struct HotkeyDefinition { int id; UINT key; } definitions[]{
-            {kCaptureHotkey, '1'}, {kMonitorHotkey, '3'}, {kWindowHotkey, '4'},
-        };
-        for (const auto& definition : definitions) {
-            if (::RegisterHotKey(host_window_, definition.id,
-                    MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, definition.key)) {
-                hotkey_ids_.push_back(definition.id);
-            } else {
-                hotkey_failure = true;
-            }
-        }
-    }
-    if (hotkey_failure) {
+    if (!RegisterConfiguredHotkeys(settings_)) {
         ::MessageBoxW(nullptr,
             L"Одно или несколько сочетаний заняты другим приложением.\n"
             L"Доступные режимы можно запустить через значок Screenshooter в трее.",
@@ -106,6 +89,39 @@ int Application::Run(const int) {
         ::TranslateMessage(&message);
         ::DispatchMessageW(&message);
     }
+}
+
+bool Application::RegisterConfiguredHotkeys(const settings::Settings& settings) {
+    if (!settings.hotkeys_enabled) {
+        return true;
+    }
+    const struct HotkeyDefinition {
+        int id;
+        settings::HotkeyBinding binding;
+    } definitions[]{
+        {kCaptureHotkey, settings.area_hotkey},
+        {kMonitorHotkey, settings.monitor_hotkey},
+        {kWindowHotkey, settings.window_hotkey},
+    };
+    for (const auto& definition : definitions) {
+        if (!::RegisterHotKey(host_window_, definition.id,
+                definition.binding.modifiers | MOD_NOREPEAT,
+                definition.binding.virtual_key)) {
+            UnregisterHotkeys();
+            return false;
+        }
+        hotkey_ids_.push_back(definition.id);
+    }
+    return true;
+}
+
+void Application::UnregisterHotkeys() {
+    if (host_window_ != nullptr) {
+        for (const int id : hotkey_ids_) {
+            ::UnregisterHotKey(host_window_, id);
+        }
+    }
+    hotkey_ids_.clear();
 }
 
 bool Application::RegisterHostWindowClass() {
@@ -348,6 +364,31 @@ void Application::OpenSaveFolder() {
     }
 }
 
+void Application::ConfigureHotkeys() {
+    const auto proposed = settings::ShowHotkeySettingsDialog(instance_, host_window_, settings_);
+    if (!proposed.has_value()) {
+        return;
+    }
+    const settings::Settings previous = settings_;
+    UnregisterHotkeys();
+    if (!RegisterConfiguredHotkeys(*proposed)) {
+        static_cast<void>(RegisterConfiguredHotkeys(previous));
+        ::MessageBoxW(nullptr,
+            L"Одно из выбранных сочетаний уже занято. Старые настройки сохранены.",
+            kApplicationName, MB_OK | MB_ICONWARNING);
+        return;
+    }
+    if (!settings_store_.Save(*proposed)) {
+        UnregisterHotkeys();
+        static_cast<void>(RegisterConfiguredHotkeys(previous));
+        static_cast<void>(settings_store_.Save(previous));
+        ::MessageBoxW(nullptr, L"Не удалось сохранить горячие клавиши.",
+            kApplicationName, MB_OK | MB_ICONERROR);
+        return;
+    }
+    settings_ = *proposed;
+}
+
 void Application::ToggleAutostart() {
     const bool enabled = !settings_.autostart_enabled;
     if (!settings_store_.SetAutostart(enabled)) {
@@ -385,6 +426,9 @@ void Application::HandleTrayCommand(const tray::TrayCommand command) {
     case tray::TrayCommand::open_save_folder:
         OpenSaveFolder();
         break;
+    case tray::TrayCommand::configure_hotkeys:
+        ConfigureHotkeys();
+        break;
     case tray::TrayCommand::toggle_autostart:
         ToggleAutostart();
         break;
@@ -401,10 +445,7 @@ void Application::ExitApplication() {
         return;
     }
     exiting_ = true;
-    for (const int id : hotkey_ids_) {
-        ::UnregisterHotKey(host_window_, id);
-    }
-    hotkey_ids_.clear();
+    UnregisterHotkeys();
     tray_.Shutdown();
     overlay_.reset();
 

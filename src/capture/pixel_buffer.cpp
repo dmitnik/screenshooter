@@ -69,4 +69,22 @@ PixelBuffer Crop(const PixelBuffer& source, const platform::PixelRect source_rec
     return result;
 }
 
+bool ContainsVisibleRgb(const PixelBuffer& source) noexcept {
+    if (source.empty()) {
+        return false;
+    }
+    for (std::int32_t y = 0; y < source.height; ++y) {
+        const auto* current = source.row(y);
+        for (std::int32_t x = 0; x < source.width; ++x) {
+            const auto offset = static_cast<std::size_t>(x) * 4U;
+            if (current[offset] != std::byte{0} ||
+                current[offset + 1] != std::byte{0} ||
+                current[offset + 2] != std::byte{0}) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 }  // namespace screenshooter::capture

@@ -7,7 +7,8 @@ namespace screenshooter::settings {
 namespace {
 
 constexpr wchar_t kRunPath[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-constexpr DWORD kSchemaVersion = 1;
+constexpr DWORD kSchemaVersion = 2;
+constexpr UINT kAllowedModifiers = MOD_ALT | MOD_CONTROL | MOD_SHIFT | MOD_WIN;
 
 DWORD ReadDword(const HKEY key, const wchar_t* name, const DWORD fallback) {
     DWORD value = fallback;
@@ -40,6 +41,25 @@ bool WriteDword(const HKEY key, const wchar_t* name, const DWORD value) {
         reinterpret_cast<const BYTE*>(&value), sizeof(value)) == ERROR_SUCCESS;
 }
 
+HotkeyBinding ReadHotkey(
+    const HKEY key,
+    const wchar_t* name,
+    const HotkeyBinding fallback
+) {
+    const DWORD packed = ReadDword(
+        key, name, (fallback.modifiers << 16U) | fallback.virtual_key);
+    const HotkeyBinding binding{
+        .modifiers = (packed >> 16U) & kAllowedModifiers,
+        .virtual_key = packed & 0xFFFFU,
+    };
+    return binding.virtual_key != 0 ? binding : fallback;
+}
+
+DWORD PackHotkey(const HotkeyBinding binding) {
+    return ((binding.modifiers & kAllowedModifiers) << 16U) |
+        (binding.virtual_key & 0xFFFFU);
+}
+
 }  // namespace
 
 Settings SettingsStore::Load() const {
@@ -49,11 +69,17 @@ Settings SettingsStore::Load() const {
         ERROR_SUCCESS) {
         return settings;
     }
-    const DWORD schema = ReadDword(key, L"SchemaVersion", kSchemaVersion);
-    if (schema == kSchemaVersion) {
+    const DWORD schema = ReadDword(key, L"SchemaVersion", 1);
+    if (schema == 1 || schema == kSchemaVersion) {
         settings.hotkeys_enabled = ReadDword(key, L"HotkeysEnabled", 1) != 0;
         settings.autostart_enabled = ReadDword(key, L"AutostartEnabled", 0) != 0;
         settings.save_folder = ReadString(key, L"SaveFolder");
+        if (schema == kSchemaVersion) {
+            settings.area_hotkey = ReadHotkey(key, L"AreaHotkey", settings.area_hotkey);
+            settings.monitor_hotkey = ReadHotkey(
+                key, L"MonitorHotkey", settings.monitor_hotkey);
+            settings.window_hotkey = ReadHotkey(key, L"WindowHotkey", settings.window_hotkey);
+        }
     }
     ::RegCloseKey(key);
     return settings;
@@ -71,6 +97,9 @@ bool SettingsStore::Save(const Settings& settings) const {
     const bool saved = WriteDword(key, L"SchemaVersion", kSchemaVersion) &&
         WriteDword(key, L"HotkeysEnabled", settings.hotkeys_enabled ? 1U : 0U) &&
         WriteDword(key, L"AutostartEnabled", settings.autostart_enabled ? 1U : 0U) &&
+        WriteDword(key, L"AreaHotkey", PackHotkey(settings.area_hotkey)) &&
+        WriteDword(key, L"MonitorHotkey", PackHotkey(settings.monitor_hotkey)) &&
+        WriteDword(key, L"WindowHotkey", PackHotkey(settings.window_hotkey)) &&
         ::RegSetValueExW(key, L"SaveFolder", 0, REG_SZ,
             reinterpret_cast<const BYTE*>(folder.c_str()),
             static_cast<DWORD>((folder.size() + 1) * sizeof(wchar_t))) == ERROR_SUCCESS;

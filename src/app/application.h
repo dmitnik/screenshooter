@@ -36,7 +36,10 @@ private:
     void OpenImage();
     void ChooseSaveFolder();
     void OpenSaveFolder();
+    void ConfigureHotkeys();
     void ToggleAutostart();
+    [[nodiscard]] bool RegisterConfiguredHotkeys(const settings::Settings& settings);
+    void UnregisterHotkeys();
     void CreateEditor(capture::PixelBuffer image);
     void ExitApplication();
 

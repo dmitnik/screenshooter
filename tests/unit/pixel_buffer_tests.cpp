@@ -4,6 +4,7 @@
 
 using screenshooter::capture::CreateOpaqueBuffer;
 using screenshooter::capture::Crop;
+using screenshooter::capture::ContainsVisibleRgb;
 using screenshooter::platform::PixelRect;
 
 TEST_CASE("Opaque buffer initializes alpha for every pixel") {
@@ -30,4 +31,11 @@ TEST_CASE("Crop copies a clipped rectangular pixel region") {
 TEST_CASE("Crop rejects a region outside the source") {
     const auto image = CreateOpaqueBuffer(4, 3);
     REQUIRE(Crop(image, PixelRect{10, 10, 12, 12}).empty());
+}
+
+TEST_CASE("Visible RGB detection ignores alpha and detects color") {
+    auto pixels = CreateOpaqueBuffer(2, 1);
+    REQUIRE_FALSE(ContainsVisibleRgb(pixels));
+    pixels.pixels[1] = std::byte{1};
+    REQUIRE(ContainsVisibleRgb(pixels));
 }

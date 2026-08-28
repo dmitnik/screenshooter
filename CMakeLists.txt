@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.28)
 
 project(
     Screenshooter
-    VERSION 0.1.0
+    VERSION 0.1.1
     DESCRIPTION "Fast native screenshot editor for Windows"
     LANGUAGES CXX RC
 )
@@ -46,6 +46,7 @@ add_executable(screenshooter WIN32
     src/editor/document_session.cpp
     src/editor/editor_window.cpp
     src/overlay/selection_overlay.cpp
+    src/settings/settings_dialog.cpp
     src/tray/tray_host.cpp
     resources/app.rc
 )

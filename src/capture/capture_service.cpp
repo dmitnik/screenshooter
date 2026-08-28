@@ -83,6 +83,12 @@ void CopyRotatedOutput(
 
 CaptureOutcome CaptureService::CaptureVirtualDesktop() const {
     if (auto frame = CaptureWithDesktopDuplication()) {
+        if (!ContainsVisibleRgb(frame->pixels)) {
+            if (auto fallback = CaptureWithGdi();
+                fallback && ContainsVisibleRgb(fallback->pixels)) {
+                return {std::move(fallback), {}};
+            }
+        }
         return {std::move(frame), {}};
     }
     if (auto frame = CaptureWithGdi()) {
@@ -177,6 +183,11 @@ std::optional<CaptureFrame> CaptureService::CaptureWithDesktopDuplication() cons
             D3D11_TEXTURE2D_DESC texture_description{};
             if (SUCCEEDED(result)) {
                 texture->GetDesc(&texture_description);
+                if (texture_description.Format != DXGI_FORMAT_B8G8R8A8_UNORM &&
+                    texture_description.Format != DXGI_FORMAT_B8G8R8A8_UNORM_SRGB) {
+                    duplication->ReleaseFrame();
+                    return std::nullopt;
+                }
                 auto staging_description = texture_description;
                 staging_description.Usage = D3D11_USAGE_STAGING;
                 staging_description.BindFlags = 0;

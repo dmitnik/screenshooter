@@ -28,6 +28,9 @@ TEST_CASE("HKCU settings preserve the default save folder") {
         .hotkeys_enabled = false,
         .autostart_enabled = true,
         .save_folder = L"D:\\Screenshots",
+        .area_hotkey = {MOD_ALT, 'A'},
+        .monitor_hotkey = {MOD_CONTROL, VK_F8},
+        .window_hotkey = {MOD_CONTROL | MOD_SHIFT, 'W'},
     };
 
     REQUIRE(store.Save(settings));
@@ -35,6 +38,9 @@ TEST_CASE("HKCU settings preserve the default save folder") {
     REQUIRE_FALSE(loaded.hotkeys_enabled);
     REQUIRE(loaded.autostart_enabled);
     REQUIRE(loaded.save_folder == std::filesystem::path(L"D:\\Screenshots"));
+    REQUIRE(loaded.area_hotkey == settings.area_hotkey);
+    REQUIRE(loaded.monitor_hotkey == settings.monitor_hotkey);
+    REQUIRE(loaded.window_hotkey == settings.window_hotkey);
 }
 
 TEST_CASE("Unknown registry schema safely restores defaults") {
