@@ -13,16 +13,32 @@ option(SCREENSHOOTER_BUILD_TESTS "Build automated tests" ON)
 option(SCREENSHOOTER_BUILD_SPIKES "Build technical spike runner" ON)
 
 add_library(screenshooter_core STATIC
+    src/capture/capture_service.cpp
+    src/capture/pixel_buffer.cpp
+    src/export/clipboard_service.cpp
     src/platform/dpi.cpp
     src/platform/geometry.cpp
 )
 
 target_include_directories(screenshooter_core PUBLIC src)
 target_compile_features(screenshooter_core PUBLIC cxx_std_20)
+target_link_libraries(screenshooter_core PUBLIC
+    d3d11
+    dxgi
+    gdi32
+    msimg32
+    ole32
+    user32
+    windowscodecs
+)
 
 add_executable(screenshooter WIN32
     src/app/application.cpp
     src/app/main.cpp
+    src/editor/document_session.cpp
+    src/editor/editor_window.cpp
+    src/overlay/selection_overlay.cpp
+    src/tray/tray_host.cpp
     resources/app.rc
 )
 
@@ -116,6 +132,7 @@ if(BUILD_TESTING AND SCREENSHOOTER_BUILD_TESTS)
     FetchContent_MakeAvailable(Catch2)
 
     add_executable(unit_tests
+        tests/unit/pixel_buffer_tests.cpp
         tests/unit/dpi_tests.cpp
         tests/unit/geometry_tests.cpp
         tests/unit/unique_handle_tests.cpp

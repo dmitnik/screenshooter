@@ -1,36 +1,62 @@
 #include "app/application.h"
 
-#include "platform/dpi.h"
-#include "resource.h"
+#include "app/messages.h"
+#include "capture/capture_service.h"
+#include "editor/document_session.h"
 
 #include <commctrl.h>
 
-#include <array>
+#include <memory>
+#include <utility>
+#include <vector>
 
 namespace screenshooter::app {
 namespace {
 
-constexpr COLORREF kBackgroundColor = RGB(245, 247, 250);
-constexpr COLORREF kTextColor = RGB(34, 40, 49);
+constexpr wchar_t kHostWindowClass[] = L"Screenshooter.HostWindow";
+constexpr wchar_t kApplicationName[] = L"Screenshooter";
+constexpr int kCaptureHotkey = 1001;
 
 }  // namespace
 
 Application::Application(const HINSTANCE instance) noexcept
     : instance_(instance) {}
 
-int Application::Run(const int show_command) {
+Application::~Application() {
+    if (hotkey_registered_ && host_window_ != nullptr) {
+        ::UnregisterHotKey(host_window_, kCaptureHotkey);
+    }
+    tray_.Shutdown();
+}
+
+int Application::Run(const int) {
     INITCOMMONCONTROLSEX controls{
         .dwSize = sizeof(INITCOMMONCONTROLSEX),
         .dwICC = ICC_STANDARD_CLASSES,
     };
     ::InitCommonControlsEx(&controls);
 
-    title_ = LoadResourceString(IDS_APP_TITLE);
-    window_class_ = LoadResourceString(IDS_WINDOW_CLASS);
-
-    if (title_.empty() || window_class_.empty() ||
-        !RegisterMainWindowClass() || !CreateMainWindow(show_command)) {
+    taskbar_created_message_ = ::RegisterWindowMessageW(L"TaskbarCreated");
+    if (!RegisterHostWindowClass() || !CreateHostWindow()) {
+        ::MessageBoxW(nullptr, L"Не удалось запустить приложение.",
+            kApplicationName, MB_OK | MB_ICONERROR);
         return 1;
+    }
+    if (!tray_.Initialize(host_window_, messages::kTrayCallback)) {
+        ::MessageBoxW(nullptr, L"Не удалось создать значок в области уведомлений.",
+            kApplicationName, MB_OK | MB_ICONERROR);
+        ::DestroyWindow(host_window_);
+        return 1;
+    }
+    hotkey_registered_ = ::RegisterHotKey(
+        host_window_, kCaptureHotkey, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, '1'
+    ) != FALSE;
+    if (!hotkey_registered_) {
+        ::MessageBoxW(nullptr,
+            L"Сочетание Ctrl+Shift+1 занято другим приложением.\n"
+            L"Снимок можно запустить через значок Screenshooter в трее.",
+            kApplicationName,
+            MB_OK | MB_ICONWARNING);
     }
 
     MSG message{};
@@ -42,66 +68,148 @@ int Application::Run(const int show_command) {
         if (result == -1) {
             return 1;
         }
-
         ::TranslateMessage(&message);
         ::DispatchMessageW(&message);
     }
 }
 
-bool Application::RegisterMainWindowClass() {
+bool Application::RegisterHostWindowClass() {
     WNDCLASSEXW window_class{
         .cbSize = sizeof(WNDCLASSEXW),
-        .style = CS_HREDRAW | CS_VREDRAW,
         .lpfnWndProc = &Application::WindowProcedure,
         .hInstance = instance_,
-        .hIcon = ::LoadIconW(nullptr, IDI_APPLICATION),
-        .hCursor = ::LoadCursorW(nullptr, IDC_ARROW),
-        .hbrBackground = nullptr,
-        .lpszClassName = window_class_.c_str(),
-        .hIconSm = ::LoadIconW(nullptr, IDI_APPLICATION),
+        .lpszClassName = kHostWindowClass,
     };
-
-    return ::RegisterClassExW(&window_class) != 0;
+    return ::RegisterClassExW(&window_class) != 0 ||
+        ::GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
 }
 
-bool Application::CreateMainWindow(const int show_command) {
-    constexpr int kInitialWidthDip = 720;
-    constexpr int kInitialHeightDip = 460;
-    const UINT system_dpi = ::GetDpiForSystem();
-
-    main_window_ = ::CreateWindowExW(
+bool Application::CreateHostWindow() {
+    host_window_ = ::CreateWindowExW(
         0,
-        window_class_.c_str(),
-        title_.c_str(),
-        WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT,
-        CW_USEDEFAULT,
-        platform::DipToPixels(kInitialWidthDip, system_dpi),
-        platform::DipToPixels(kInitialHeightDip, system_dpi),
+        kHostWindowClass,
+        kApplicationName,
+        WS_OVERLAPPED,
+        0,
+        0,
+        0,
+        0,
         nullptr,
         nullptr,
         instance_,
         this
     );
-
-    if (main_window_ == nullptr) {
-        return false;
-    }
-
-    ::ShowWindow(main_window_, show_command);
-    ::UpdateWindow(main_window_);
-    return true;
+    return host_window_ != nullptr;
 }
 
-std::wstring Application::LoadResourceString(const UINT id) const {
-    std::array<wchar_t, 256> buffer{};
-    const int length = ::LoadStringW(
-        instance_,
-        id,
-        buffer.data(),
-        static_cast<int>(buffer.size())
+void Application::StartCapture() {
+    if (exiting_ || capture_state_ != CaptureState::idle) {
+        return;
+    }
+    capture_state_ = CaptureState::capturing;
+    const HWND receiver = host_window_;
+    capture_worker_ = std::jthread([receiver] {
+        capture::CaptureService service;
+        auto outcome = std::make_unique<capture::CaptureOutcome>(
+            service.CaptureVirtualDesktop()
+        );
+        capture::CaptureOutcome* payload = outcome.release();
+        if (!::PostMessageW(
+            receiver,
+            messages::kCaptureReady,
+            reinterpret_cast<WPARAM>(payload),
+            0
+        )) {
+            delete payload;
+        }
+    });
+}
+
+void Application::HandleCaptureReady(const WPARAM payload) {
+    std::unique_ptr<capture::CaptureOutcome> outcome(
+        reinterpret_cast<capture::CaptureOutcome*>(payload)
     );
-    return length > 0 ? std::wstring(buffer.data(), static_cast<std::size_t>(length)) : L"";
+    if (exiting_) {
+        return;
+    }
+    if (outcome == nullptr || !outcome->frame.has_value()) {
+        capture_state_ = CaptureState::idle;
+        const wchar_t* details = outcome != nullptr && !outcome->error.empty()
+            ? outcome->error.c_str()
+            : L"Неизвестная ошибка захвата.";
+        ::MessageBoxW(nullptr, details, kApplicationName, MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    overlay_.reset(overlay::SelectionOverlay::Create(
+        instance_, host_window_, std::move(*outcome->frame)
+    ));
+    if (overlay_ == nullptr) {
+        capture_state_ = CaptureState::idle;
+        ::MessageBoxW(nullptr, L"Не удалось открыть выбор области.",
+            kApplicationName, MB_OK | MB_ICONERROR);
+        return;
+    }
+    capture_state_ = CaptureState::selecting;
+}
+
+void Application::HandleSelectionComplete(const WPARAM payload) {
+    std::unique_ptr<capture::PixelBuffer> image(
+        reinterpret_cast<capture::PixelBuffer*>(payload)
+    );
+    overlay_.reset();
+    capture_state_ = CaptureState::idle;
+    if (exiting_ || image == nullptr || image->empty()) {
+        return;
+    }
+
+    auto editor = editor::EditorWindow::Create(
+        instance_, host_window_, editor::CreateSession(std::move(*image))
+    );
+    if (editor == nullptr) {
+        ::MessageBoxW(nullptr, L"Не удалось открыть снимок.",
+            kApplicationName, MB_OK | MB_ICONERROR);
+        return;
+    }
+    const HWND window = editor->window();
+    editors_.emplace(window, std::move(editor));
+}
+
+void Application::HandleTrayCommand(const tray::TrayCommand command) {
+    switch (command) {
+    case tray::TrayCommand::capture_area:
+        StartCapture();
+        break;
+    case tray::TrayCommand::exit_application:
+        ExitApplication();
+        break;
+    case tray::TrayCommand::none:
+        break;
+    }
+}
+
+void Application::ExitApplication() {
+    if (exiting_) {
+        return;
+    }
+    exiting_ = true;
+    if (hotkey_registered_) {
+        ::UnregisterHotKey(host_window_, kCaptureHotkey);
+        hotkey_registered_ = false;
+    }
+    tray_.Shutdown();
+    overlay_.reset();
+
+    std::vector<HWND> windows;
+    windows.reserve(editors_.size());
+    for (const auto& entry : editors_) {
+        windows.push_back(entry.first);
+    }
+    for (const HWND window : windows) {
+        ::DestroyWindow(window);
+    }
+    editors_.clear();
+    ::DestroyWindow(host_window_);
 }
 
 LRESULT CALLBACK Application::WindowProcedure(
@@ -111,7 +219,6 @@ LRESULT CALLBACK Application::WindowProcedure(
     const LPARAM l_param
 ) {
     Application* application = nullptr;
-
     if (message == WM_NCCREATE) {
         const auto* create = reinterpret_cast<const CREATESTRUCTW*>(l_param);
         application = static_cast<Application*>(create->lpCreateParams);
@@ -121,11 +228,9 @@ LRESULT CALLBACK Application::WindowProcedure(
             ::GetWindowLongPtrW(window, GWLP_USERDATA)
         );
     }
-
-    if (application != nullptr) {
-        return application->HandleMessage(window, message, w_param, l_param);
-    }
-    return ::DefWindowProcW(window, message, w_param, l_param);
+    return application != nullptr
+        ? application->HandleMessage(window, message, w_param, l_param)
+        : ::DefWindowProcW(window, message, w_param, l_param);
 }
 
 LRESULT Application::HandleMessage(
@@ -134,47 +239,41 @@ LRESULT Application::HandleMessage(
     const WPARAM w_param,
     const LPARAM l_param
 ) {
+    if (message == taskbar_created_message_) {
+        tray_.Restore();
+        return 0;
+    }
     switch (message) {
-    case WM_DPICHANGED: {
-        const auto* suggested = reinterpret_cast<const RECT*>(l_param);
-        ::SetWindowPos(
-            window,
-            nullptr,
-            suggested->left,
-            suggested->top,
-            suggested->right - suggested->left,
-            suggested->bottom - suggested->top,
-            SWP_NOACTIVATE | SWP_NOZORDER
-        );
+    case messages::kTrayCallback:
+        HandleTrayCommand(tray_.HandleCallback(l_param));
         return 0;
-    }
-    case WM_ERASEBKGND:
-        return 1;
-    case WM_PAINT: {
-        PAINTSTRUCT paint{};
-        HDC device_context = ::BeginPaint(window, &paint);
-
-        RECT client{};
-        ::GetClientRect(window, &client);
-        HBRUSH background = ::CreateSolidBrush(kBackgroundColor);
-        ::FillRect(device_context, &client, background);
-        ::DeleteObject(background);
-
-        ::SetBkMode(device_context, TRANSPARENT);
-        ::SetTextColor(device_context, kTextColor);
-        const wchar_t* text = L"Screenshooter — технический каркас готов";
-        ::DrawTextW(
-            device_context,
-            text,
-            -1,
-            &client,
-            DT_CENTER | DT_SINGLELINE | DT_VCENTER
-        );
-
-        ::EndPaint(window, &paint);
+    case messages::kCaptureReady:
+        HandleCaptureReady(w_param);
         return 0;
-    }
+    case messages::kSelectionComplete:
+        HandleSelectionComplete(w_param);
+        return 0;
+    case messages::kSelectionCancelled:
+        overlay_.reset();
+        capture_state_ = CaptureState::idle;
+        return 0;
+    case messages::kEditorClosed:
+        editors_.erase(reinterpret_cast<HWND>(w_param));
+        return 0;
+    case WM_HOTKEY:
+        if (w_param == kCaptureHotkey) {
+            StartCapture();
+        }
+        return 0;
+    case WM_QUERYENDSESSION:
+        return TRUE;
+    case WM_ENDSESSION:
+        if (w_param != 0) {
+            ExitApplication();
+        }
+        return 0;
     case WM_DESTROY:
+        host_window_ = nullptr;
         ::PostQuitMessage(0);
         return 0;
     default:
