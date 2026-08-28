@@ -1,10 +1,26 @@
 # План реализации Screenshooter
 
-**Статус:** Approved
+**Статус:** Portable 0.1.0 implemented; release limitations documented
 
 **Дата утверждения:** 2026-08-28
 
 **Название продукта:** Screenshooter (`screenshooter.exe`)
+
+## Результат выполнения
+
+Инкременты 0–7 реализованы локальными коммитами и проверены Debug/Release
+сборками. Portable artifact находится в `packages/` рабочего дерева; фактические
+метрики и инструкция запуска опубликованы в `README.md`, протоколы — в
+`tests/manual/`.
+
+После утверждения плана пользователь дополнительно запросил выбор папки сохранения
+по умолчанию. Он реализован через системный folder picker и значение `SaveFolder`
+в `HKCU\Software\Screenshooter`.
+
+Ограничения, которые нельзя закрыть одной локальной Windows 11 машиной или без
+внешних полномочий, оставлены явно: Windows 10/mixed-DPI/HDR test matrix, реальные
+Share targets и принтеры, code-signing certificate и Defender submission. Window
+capture в portable 0.1.0 использует DWM bounds с visible-region fallback.
 
 ## 1. Назначение документа
 
