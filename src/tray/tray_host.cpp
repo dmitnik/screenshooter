@@ -8,6 +8,12 @@ namespace {
 constexpr UINT kCaptureCommand = 2001;
 constexpr UINT kExitCommand = 2002;
 constexpr UINT kOpenCommand = 2003;
+constexpr UINT kChooseFolderCommand = 2004;
+constexpr UINT kOpenFolderCommand = 2005;
+constexpr UINT kAutostartCommand = 2006;
+constexpr UINT kWindowCommand = 2007;
+constexpr UINT kMonitorCommand = 2008;
+constexpr UINT kAllCommand = 2009;
 
 }  // namespace
 
@@ -69,7 +75,14 @@ TrayCommand TrayHost::ShowContextMenu() const {
     }
 
     ::AppendMenuW(menu, MF_STRING, kCaptureCommand, L"Снимок области\tCtrl+Shift+1");
+    ::AppendMenuW(menu, MF_STRING, kWindowCommand, L"Окно под курсором\tCtrl+Shift+4");
+    ::AppendMenuW(menu, MF_STRING, kMonitorCommand, L"Монитор под курсором\tCtrl+Shift+3");
+    ::AppendMenuW(menu, MF_STRING, kAllCommand, L"Все мониторы");
     ::AppendMenuW(menu, MF_STRING, kOpenCommand, L"Открыть изображение…");
+    ::AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    ::AppendMenuW(menu, MF_STRING, kChooseFolderCommand, L"Выбрать папку сохранения…");
+    ::AppendMenuW(menu, MF_STRING, kOpenFolderCommand, L"Открыть папку сохранения");
+    ::AppendMenuW(menu, MF_STRING, kAutostartCommand, L"Переключить автозапуск");
     ::AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     ::AppendMenuW(menu, MF_STRING, kExitCommand, L"Выход");
     ::SetForegroundWindow(owner_);
@@ -86,8 +99,26 @@ TrayCommand TrayHost::ShowContextMenu() const {
     if (command == kCaptureCommand) {
         return TrayCommand::capture_area;
     }
+    if (command == kWindowCommand) {
+        return TrayCommand::capture_window;
+    }
+    if (command == kMonitorCommand) {
+        return TrayCommand::capture_monitor;
+    }
+    if (command == kAllCommand) {
+        return TrayCommand::capture_all;
+    }
     if (command == kOpenCommand) {
         return TrayCommand::open_image;
+    }
+    if (command == kChooseFolderCommand) {
+        return TrayCommand::choose_save_folder;
+    }
+    if (command == kOpenFolderCommand) {
+        return TrayCommand::open_save_folder;
+    }
+    if (command == kAutostartCommand) {
+        return TrayCommand::toggle_autostart;
     }
     if (command == kExitCommand) {
         return TrayCommand::exit_application;

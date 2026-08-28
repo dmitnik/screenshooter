@@ -7,7 +7,9 @@
 #include "export/image_file_service.h"
 
 #include <commctrl.h>
+#include <dwmapi.h>
 #include <shobjidl_core.h>
+#include <shellapi.h>
 #include <wrl/client.h>
 
 #include <memory>
@@ -20,6 +22,8 @@ namespace {
 constexpr wchar_t kHostWindowClass[] = L"Screenshooter.HostWindow";
 constexpr wchar_t kApplicationName[] = L"Screenshooter";
 constexpr int kCaptureHotkey = 1001;
+constexpr int kMonitorHotkey = 1003;
+constexpr int kWindowHotkey = 1004;
 
 }  // namespace
 
@@ -27,14 +31,17 @@ Application::Application(const HINSTANCE instance) noexcept
     : instance_(instance) {}
 
 Application::~Application() {
-    if (hotkey_registered_ && host_window_ != nullptr) {
-        ::UnregisterHotKey(host_window_, kCaptureHotkey);
+    if (host_window_ != nullptr) {
+        for (const int id : hotkey_ids_) {
+            ::UnregisterHotKey(host_window_, id);
+        }
     }
     tray_.Shutdown();
 }
 
 int Application::Run(const int) {
     exporting::ShareService::CleanupOldFiles();
+    settings_ = settings_store_.Load();
     INITCOMMONCONTROLSEX controls{
         .dwSize = sizeof(INITCOMMONCONTROLSEX),
         .dwICC = ICC_STANDARD_CLASSES,
@@ -53,15 +60,38 @@ int Application::Run(const int) {
         ::DestroyWindow(host_window_);
         return 1;
     }
-    hotkey_registered_ = ::RegisterHotKey(
-        host_window_, kCaptureHotkey, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, '1'
-    ) != FALSE;
-    if (!hotkey_registered_) {
+    bool hotkey_failure = false;
+    if (settings_.hotkeys_enabled) {
+        const struct HotkeyDefinition { int id; UINT key; } definitions[]{
+            {kCaptureHotkey, '1'}, {kMonitorHotkey, '3'}, {kWindowHotkey, '4'},
+        };
+        for (const auto& definition : definitions) {
+            if (::RegisterHotKey(host_window_, definition.id,
+                    MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, definition.key)) {
+                hotkey_ids_.push_back(definition.id);
+            } else {
+                hotkey_failure = true;
+            }
+        }
+    }
+    if (hotkey_failure) {
         ::MessageBoxW(nullptr,
-            L"Сочетание Ctrl+Shift+1 занято другим приложением.\n"
-            L"Снимок можно запустить через значок Screenshooter в трее.",
+            L"Одно или несколько сочетаний заняты другим приложением.\n"
+            L"Доступные режимы можно запустить через значок Screenshooter в трее.",
             kApplicationName,
             MB_OK | MB_ICONWARNING);
+    }
+
+    int argument_count = 0;
+    PWSTR* arguments = ::CommandLineToArgvW(::GetCommandLineW(), &argument_count);
+    if (arguments != nullptr) {
+        if (argument_count > 1) {
+            auto image = exporting::ImageFileService::Load(arguments[1]);
+            if (image.has_value()) {
+                CreateEditor(std::move(*image));
+            }
+        }
+        ::LocalFree(arguments);
     }
 
     MSG message{};
@@ -107,9 +137,41 @@ bool Application::CreateHostWindow() {
     return host_window_ != nullptr;
 }
 
-void Application::StartCapture() {
+void Application::StartCapture(const CaptureRequest request) {
     if (exiting_ || capture_state_ != CaptureState::idle) {
         return;
+    }
+    capture_request_ = request;
+    requested_bounds_.reset();
+    if (request == CaptureRequest::monitor) {
+        POINT cursor{};
+        ::GetCursorPos(&cursor);
+        MONITORINFO monitor{.cbSize = sizeof(MONITORINFO)};
+        if (::GetMonitorInfoW(::MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST),
+                &monitor)) {
+            requested_bounds_ = platform::PixelRect{
+                monitor.rcMonitor.left, monitor.rcMonitor.top,
+                monitor.rcMonitor.right, monitor.rcMonitor.bottom};
+        }
+    } else if (request == CaptureRequest::window) {
+        POINT cursor{};
+        ::GetCursorPos(&cursor);
+        HWND target = ::GetAncestor(::WindowFromPoint(cursor), GA_ROOT);
+        DWORD process_id = 0;
+        ::GetWindowThreadProcessId(target, &process_id);
+        if (target == nullptr || process_id == ::GetCurrentProcessId() ||
+            !::IsWindowVisible(target) || ::IsIconic(target)) {
+            ::MessageBoxW(nullptr, L"Под курсором нет доступного окна.",
+                kApplicationName, MB_OK | MB_ICONINFORMATION);
+            return;
+        }
+        RECT bounds{};
+        if (FAILED(::DwmGetWindowAttribute(target, DWMWA_EXTENDED_FRAME_BOUNDS,
+                &bounds, sizeof(bounds)))) {
+            ::GetWindowRect(target, &bounds);
+        }
+        requested_bounds_ = platform::PixelRect{
+            bounds.left, bounds.top, bounds.right, bounds.bottom};
     }
     capture_state_ = CaptureState::capturing;
     const HWND receiver = host_window_;
@@ -146,6 +208,26 @@ void Application::HandleCaptureReady(const WPARAM payload) {
         return;
     }
 
+    if (capture_request_ != CaptureRequest::area) {
+        auto frame = std::move(*outcome->frame);
+        capture::PixelBuffer image;
+        if (capture_request_ == CaptureRequest::all || !requested_bounds_.has_value()) {
+            image = std::move(frame.pixels);
+        } else {
+            const auto selected = platform::Intersect(*requested_bounds_, frame.virtual_bounds);
+            image = capture::Crop(frame.pixels, {
+                selected.left - frame.virtual_bounds.left,
+                selected.top - frame.virtual_bounds.top,
+                selected.right - frame.virtual_bounds.left,
+                selected.bottom - frame.virtual_bounds.top,
+            });
+        }
+        capture_state_ = CaptureState::idle;
+        if (!image.empty()) {
+            CreateEditor(std::move(image));
+        }
+        return;
+    }
     overlay_.reset(overlay::SelectionOverlay::Create(
         instance_, host_window_, std::move(*outcome->frame)
     ));
@@ -215,13 +297,94 @@ void Application::OpenImage() {
     }
 }
 
+void Application::ChooseSaveFolder() {
+    Microsoft::WRL::ComPtr<IFileOpenDialog> dialog;
+    if (FAILED(::CoCreateInstance(CLSID_FileOpenDialog, nullptr,
+            CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)))) {
+        return;
+    }
+    DWORD options = 0;
+    dialog->GetOptions(&options);
+    dialog->SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM);
+    dialog->SetTitle(L"Папка сохранения Screenshooter");
+    if (!settings_.save_folder.empty()) {
+        Microsoft::WRL::ComPtr<IShellItem> current;
+        if (SUCCEEDED(::SHCreateItemFromParsingName(
+                settings_.save_folder.c_str(), nullptr, IID_PPV_ARGS(&current)))) {
+            dialog->SetFolder(current.Get());
+        }
+    }
+    const HRESULT shown = dialog->Show(host_window_);
+    if (shown == HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
+        return;
+    }
+    Microsoft::WRL::ComPtr<IShellItem> item;
+    PWSTR path = nullptr;
+    if (FAILED(shown) || FAILED(dialog->GetResult(&item)) ||
+        FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)) || path == nullptr) {
+        return;
+    }
+    settings_.save_folder = path;
+    ::CoTaskMemFree(path);
+    if (!settings_store_.Save(settings_)) {
+        ::MessageBoxW(nullptr, L"Не удалось сохранить настройку папки.",
+            kApplicationName, MB_OK | MB_ICONERROR);
+    }
+}
+
+void Application::OpenSaveFolder() {
+    if (settings_.save_folder.empty()) {
+        ChooseSaveFolder();
+    }
+    if (!settings_.save_folder.empty()) {
+        const auto result = reinterpret_cast<INT_PTR>(::ShellExecuteW(
+            nullptr, L"open", settings_.save_folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
+        if (result <= 32) {
+            ::MessageBoxW(nullptr, L"Не удалось открыть папку сохранения.",
+                kApplicationName, MB_OK | MB_ICONERROR);
+        }
+    }
+}
+
+void Application::ToggleAutostart() {
+    const bool enabled = !settings_.autostart_enabled;
+    if (!settings_store_.SetAutostart(enabled)) {
+        ::MessageBoxW(nullptr, L"Не удалось изменить автозапуск.",
+            kApplicationName, MB_OK | MB_ICONERROR);
+        return;
+    }
+    settings_.autostart_enabled = enabled;
+    static_cast<void>(settings_store_.Save(settings_));
+    ::MessageBoxW(nullptr,
+        enabled ? L"Автозапуск включён." : L"Автозапуск выключен.",
+        kApplicationName, MB_OK | MB_ICONINFORMATION);
+}
+
 void Application::HandleTrayCommand(const tray::TrayCommand command) {
     switch (command) {
     case tray::TrayCommand::capture_area:
-        StartCapture();
+        StartCapture(CaptureRequest::area);
+        break;
+    case tray::TrayCommand::capture_window:
+        StartCapture(CaptureRequest::window);
+        break;
+    case tray::TrayCommand::capture_monitor:
+        StartCapture(CaptureRequest::monitor);
+        break;
+    case tray::TrayCommand::capture_all:
+        StartCapture(CaptureRequest::all);
         break;
     case tray::TrayCommand::open_image:
         OpenImage();
+        break;
+    case tray::TrayCommand::choose_save_folder:
+        ChooseSaveFolder();
+        break;
+    case tray::TrayCommand::open_save_folder:
+        OpenSaveFolder();
+        break;
+    case tray::TrayCommand::toggle_autostart:
+        ToggleAutostart();
         break;
     case tray::TrayCommand::exit_application:
         ExitApplication();
@@ -236,10 +399,10 @@ void Application::ExitApplication() {
         return;
     }
     exiting_ = true;
-    if (hotkey_registered_) {
-        ::UnregisterHotKey(host_window_, kCaptureHotkey);
-        hotkey_registered_ = false;
+    for (const int id : hotkey_ids_) {
+        ::UnregisterHotKey(host_window_, id);
     }
+    hotkey_ids_.clear();
     tray_.Shutdown();
     overlay_.reset();
 
@@ -305,7 +468,11 @@ LRESULT Application::HandleMessage(
         return 0;
     case WM_HOTKEY:
         if (w_param == kCaptureHotkey) {
-            StartCapture();
+            StartCapture(CaptureRequest::area);
+        } else if (w_param == kMonitorHotkey) {
+            StartCapture(CaptureRequest::monitor);
+        } else if (w_param == kWindowHotkey) {
+            StartCapture(CaptureRequest::window);
         }
         return 0;
     case WM_QUERYENDSESSION:

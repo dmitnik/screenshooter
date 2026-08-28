@@ -5,6 +5,7 @@
 #include "export/clipboard_service.h"
 #include "export/image_file_service.h"
 #include "platform/dpi.h"
+#include "settings/settings_store.h"
 
 #include <windowsx.h>
 #include <commctrl.h>
@@ -372,6 +373,14 @@ void EditorWindow::SaveAs() {
     dialog->SetFileTypes(ARRAYSIZE(filters), filters);
     dialog->SetFileTypeIndex(1);
     dialog->SetDefaultExtension(L"png");
+    const auto configured_folder = settings::SettingsStore().Load().save_folder;
+    if (!configured_folder.empty()) {
+        Microsoft::WRL::ComPtr<IShellItem> folder;
+        if (SUCCEEDED(::SHCreateItemFromParsingName(
+                configured_folder.c_str(), nullptr, IID_PPV_ARGS(&folder)))) {
+            dialog->SetFolder(folder.Get());
+        }
+    }
     const std::wstring default_name = L"Снимок " + std::to_wstring(session_.id);
     dialog->SetFileName(default_name.c_str());
     const HRESULT shown = dialog->Show(window_);

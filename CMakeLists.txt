@@ -23,6 +23,7 @@ add_library(screenshooter_core STATIC
     src/export/share_service.cpp
     src/platform/dpi.cpp
     src/platform/geometry.cpp
+    src/settings/settings_store.cpp
 )
 
 target_include_directories(screenshooter_core PUBLIC src)
@@ -140,6 +141,7 @@ if(BUILD_TESTING AND SCREENSHOOTER_BUILD_TESTS)
     add_executable(unit_tests
         tests/unit/pixel_buffer_tests.cpp
         tests/unit/document_model_tests.cpp
+        tests/unit/settings_store_tests.cpp
         tests/unit/dpi_tests.cpp
         tests/unit/geometry_tests.cpp
         tests/unit/unique_handle_tests.cpp

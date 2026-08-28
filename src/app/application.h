@@ -3,12 +3,15 @@
 #include "editor/editor_window.h"
 #include "overlay/selection_overlay.h"
 #include "tray/tray_host.h"
+#include "settings/settings_store.h"
 
 #include <windows.h>
 
 #include <memory>
 #include <thread>
 #include <unordered_map>
+#include <optional>
+#include <vector>
 
 namespace screenshooter::app {
 
@@ -21,14 +24,18 @@ public:
 
 private:
     enum class CaptureState { idle, capturing, selecting };
+    enum class CaptureRequest { area, window, monitor, all };
 
     [[nodiscard]] bool RegisterHostWindowClass();
     [[nodiscard]] bool CreateHostWindow();
-    void StartCapture();
+    void StartCapture(CaptureRequest request = CaptureRequest::area);
     void HandleCaptureReady(WPARAM payload);
     void HandleSelectionComplete(WPARAM payload);
     void HandleTrayCommand(tray::TrayCommand command);
     void OpenImage();
+    void ChooseSaveFolder();
+    void OpenSaveFolder();
+    void ToggleAutostart();
     void CreateEditor(capture::PixelBuffer image);
     void ExitApplication();
 
@@ -39,11 +46,15 @@ private:
     HWND host_window_{};
     UINT taskbar_created_message_{};
     tray::TrayHost tray_;
+    settings::SettingsStore settings_store_;
+    settings::Settings settings_;
     CaptureState capture_state_{CaptureState::idle};
+    CaptureRequest capture_request_{CaptureRequest::area};
+    std::optional<platform::PixelRect> requested_bounds_;
     std::jthread capture_worker_;
     std::unique_ptr<overlay::SelectionOverlay> overlay_;
     std::unordered_map<HWND, std::unique_ptr<editor::EditorWindow>> editors_;
-    bool hotkey_registered_{};
+    std::vector<int> hotkey_ids_;
     bool exiting_{};
 };
 

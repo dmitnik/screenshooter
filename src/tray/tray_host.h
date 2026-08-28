@@ -8,7 +8,13 @@ namespace screenshooter::tray {
 enum class TrayCommand {
     none,
     capture_area,
+    capture_window,
+    capture_monitor,
+    capture_all,
     open_image,
+    choose_save_folder,
+    open_save_folder,
+    toggle_autostart,
     exit_application,
 };
 
