@@ -6,6 +6,7 @@
 #include "platform/dpi.h"
 
 #include <windowsx.h>
+#include <commctrl.h>
 
 #include <algorithm>
 #include <cmath>
@@ -22,8 +23,18 @@ constexpr int kShareButton = 3003;
 constexpr int kSelectButton = 3101;
 constexpr int kRectangleButton = 3102;
 constexpr int kLineButton = 3103;
+constexpr int kEllipseButton = 3104;
+constexpr int kStarButton = 3105;
+constexpr int kArrowButton = 3106;
+constexpr int kCurvedArrowButton = 3107;
+constexpr int kMarkerButton = 3108;
+constexpr int kTextButton = 3109;
+constexpr int kBlurButton = 3110;
+constexpr int kCropButton = 3111;
 constexpr int kBarHeightDip = 54;
 constexpr int kToolbarHeightDip = 48;
+constexpr UINT kCommitTextEdit = WM_APP + 20;
+constexpr UINT kCancelTextEdit = WM_APP + 21;
 
 bool RegisterEditorClass(const HINSTANCE instance) {
     WNDCLASSEXW window_class{
@@ -72,7 +83,7 @@ bool EditorWindow::CreateNativeWindow() {
     }
 
     const auto title = L"Снимок " + std::to_wstring(session_.id) + L" — Screenshooter";
-    const int width = std::clamp(session_.model.source().width + 80, 680, 1280);
+    const int width = std::clamp(session_.model.source().width + 80, 1080, 1440);
     const int height = std::clamp(session_.model.source().height + 188, 520, 900);
     window_ = ::CreateWindowExW(
         0,
@@ -110,6 +121,38 @@ void EditorWindow::CreateControls() {
     line_button_ = ::CreateWindowExW(
         0, L"BUTTON", L"Линия", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         0, 0, 0, 0, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kLineButton)),
+        instance_, nullptr);
+    ellipse_button_ = ::CreateWindowExW(
+        0, L"BUTTON", L"Эллипс", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        0, 0, 0, 0, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEllipseButton)),
+        instance_, nullptr);
+    star_button_ = ::CreateWindowExW(
+        0, L"BUTTON", L"Звезда", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        0, 0, 0, 0, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kStarButton)),
+        instance_, nullptr);
+    arrow_button_ = ::CreateWindowExW(
+        0, L"BUTTON", L"Стрелка", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        0, 0, 0, 0, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kArrowButton)),
+        instance_, nullptr);
+    curved_arrow_button_ = ::CreateWindowExW(
+        0, L"BUTTON", L"Дуга", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        0, 0, 0, 0, window_,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCurvedArrowButton)), instance_, nullptr);
+    marker_button_ = ::CreateWindowExW(
+        0, L"BUTTON", L"Маркер", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        0, 0, 0, 0, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kMarkerButton)),
+        instance_, nullptr);
+    text_button_ = ::CreateWindowExW(
+        0, L"BUTTON", L"Текст", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        0, 0, 0, 0, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTextButton)),
+        instance_, nullptr);
+    blur_button_ = ::CreateWindowExW(
+        0, L"BUTTON", L"Размыть", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        0, 0, 0, 0, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kBlurButton)),
+        instance_, nullptr);
+    crop_button_ = ::CreateWindowExW(
+        0, L"BUTTON", L"Обрезать", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        0, 0, 0, 0, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCropButton)),
         instance_, nullptr);
     copy_button_ = ::CreateWindowExW(
         0, L"BUTTON", L"Копировать", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
@@ -150,14 +193,22 @@ void EditorWindow::LayoutControls() {
     const int tool_height = platform::DipToPixels(32, dpi);
     const int tool_top = (toolbar - tool_height) / 2;
     int tool_left = gap;
-    ::MoveWindow(select_button_, tool_left, tool_top,
-        platform::DipToPixels(88, dpi), tool_height, TRUE);
-    tool_left += platform::DipToPixels(96, dpi);
-    ::MoveWindow(rectangle_button_, tool_left, tool_top,
-        platform::DipToPixels(150, dpi), tool_height, TRUE);
-    tool_left += platform::DipToPixels(158, dpi);
-    ::MoveWindow(line_button_, tool_left, tool_top,
-        platform::DipToPixels(88, dpi), tool_height, TRUE);
+    const auto place_tool = [&](const HWND button, const int width_dip) {
+        const int button_width = platform::DipToPixels(width_dip, dpi);
+        ::MoveWindow(button, tool_left, tool_top, button_width, tool_height, TRUE);
+        tool_left += button_width + gap;
+    };
+    place_tool(select_button_, 72);
+    place_tool(rectangle_button_, 126);
+    place_tool(line_button_, 72);
+    place_tool(ellipse_button_, 78);
+    place_tool(star_button_, 82);
+    place_tool(arrow_button_, 86);
+    place_tool(curved_arrow_button_, 66);
+    place_tool(marker_button_, 82);
+    place_tool(text_button_, 72);
+    place_tool(blur_button_, 84);
+    place_tool(crop_button_, 92);
 }
 
 void EditorWindow::Paint() {
@@ -183,7 +234,7 @@ void EditorWindow::Paint() {
     ::FillRect(dc, &toolbar_rect, toolbar_brush);
     ::DeleteObject(toolbar_brush);
 
-    const auto rendered = DocumentRenderer::Render(session_.model);
+    const auto rendered = DocumentRenderer::Render(session_.model, false);
     if (rendered.empty()) {
         ::EndPaint(window_, &paint);
         return;
@@ -249,6 +300,25 @@ void EditorWindow::Paint() {
             ::DeleteObject(pen);
         }
     }
+    const platform::PixelRect full{
+        0, 0, session_.model.source().width, session_.model.source().height
+    };
+    if (session_.model.state().crop != full) {
+        const auto crop = session_.model.state().crop;
+        RECT crop_rect{
+            static_cast<LONG>(std::lround(offset_x_ + (crop.left * scale_))),
+            static_cast<LONG>(std::lround(offset_y_ + (crop.top * scale_))),
+            static_cast<LONG>(std::lround(offset_x_ + (crop.right * scale_))),
+            static_cast<LONG>(std::lround(offset_y_ + (crop.bottom * scale_))),
+        };
+        HPEN crop_pen = ::CreatePen(PS_DASH, 2, RGB(255, 255, 255));
+        HGDIOBJ old_pen = ::SelectObject(dc, crop_pen);
+        HGDIOBJ old_brush = ::SelectObject(dc, ::GetStockObject(HOLLOW_BRUSH));
+        ::Rectangle(dc, crop_rect.left, crop_rect.top, crop_rect.right, crop_rect.bottom);
+        ::SelectObject(dc, old_brush);
+        ::SelectObject(dc, old_pen);
+        ::DeleteObject(crop_pen);
+    }
     ::EndPaint(window_, &paint);
 }
 
@@ -298,8 +368,20 @@ void EditorWindow::BeginDocumentAction(const POINT client_point) {
         return;
     }
     last_document_point_ = DocumentPoint(client_point);
+    action_anchor_ = last_document_point_;
     action_before_ = session_.model.Snapshot();
     if (tool_ == Tool::select) {
+        if (session_.model.state().selected.has_value()) {
+            Annotation* selected = session_.model.Find(*session_.model.state().selected);
+            if (selected != nullptr &&
+                std::abs(last_document_point_.x - selected->end.x) <= 10 &&
+                std::abs(last_document_point_.y - selected->end.y) <= 10) {
+                active_annotation_ = selected->id;
+                resizing_ = true;
+                ::SetCapture(window_);
+                return;
+            }
+        }
         const auto hit = session_.model.HitTest(last_document_point_);
         session_.model.Select(hit);
         if (hit.has_value()) {
@@ -310,14 +392,62 @@ void EditorWindow::BeginDocumentAction(const POINT client_point) {
         ::InvalidateRect(window_, nullptr, FALSE);
         return;
     }
+    if (tool_ == Tool::text) {
+        BeginTextEdit(client_point);
+        return;
+    }
+    if (tool_ == Tool::crop) {
+        crop_drafting_ = true;
+        ::SetCapture(window_);
+        return;
+    }
 
+    AnnotationKind kind = AnnotationKind::line;
+    switch (tool_) {
+    case Tool::rectangle:
+        kind = AnnotationKind::rectangle;
+        break;
+    case Tool::ellipse:
+        kind = AnnotationKind::ellipse;
+        break;
+    case Tool::star:
+        kind = AnnotationKind::star;
+        break;
+    case Tool::arrow:
+        kind = AnnotationKind::arrow;
+        break;
+    case Tool::curved_arrow:
+        kind = AnnotationKind::curved_arrow;
+        break;
+    case Tool::marker:
+        kind = AnnotationKind::marker;
+        break;
+    case Tool::text:
+        kind = AnnotationKind::text;
+        break;
+    case Tool::blur:
+        kind = AnnotationKind::blur;
+        break;
+    case Tool::crop:
+        kind = AnnotationKind::rectangle;
+        break;
+    case Tool::line:
+    case Tool::select:
+        kind = AnnotationKind::line;
+        break;
+    }
     Annotation annotation{
-        .kind = tool_ == Tool::rectangle
-            ? AnnotationKind::rectangle
-            : AnnotationKind::line,
+        .kind = kind,
         .start = last_document_point_,
         .end = last_document_point_,
     };
+    if (kind == AnnotationKind::marker) {
+        annotation.color = 0x66FFEB3B;
+        annotation.thickness = 18;
+        annotation.points.push_back(last_document_point_);
+    } else if (kind == AnnotationKind::curved_arrow) {
+        annotation.points.push_back(last_document_point_);
+    }
     active_annotation_ = session_.model.Add(annotation);
     creating_ = true;
     ::SetCapture(window_);
@@ -325,11 +455,17 @@ void EditorWindow::BeginDocumentAction(const POINT client_point) {
 }
 
 void EditorWindow::UpdateDocumentAction(const POINT client_point) {
-    if (!dragging_ && !creating_) {
+    if (!dragging_ && !creating_ && !resizing_ && !crop_drafting_) {
         return;
     }
     const auto current = DocumentPoint(client_point);
-    if (dragging_) {
+    if (crop_drafting_) {
+        session_.model.SetCrop(platform::Normalize(action_anchor_, current));
+    } else if (resizing_) {
+        if (Annotation* annotation = session_.model.Find(active_annotation_)) {
+            annotation->end = current;
+        }
+    } else if (dragging_) {
         const platform::PixelPoint delta{
             current.x - last_document_point_.x,
             current.y - last_document_point_.y,
@@ -337,19 +473,31 @@ void EditorWindow::UpdateDocumentAction(const POINT client_point) {
         static_cast<void>(session_.model.Move(active_annotation_, delta));
     } else if (Annotation* annotation = session_.model.Find(active_annotation_)) {
         annotation->end = current;
+        if (annotation->kind == AnnotationKind::marker &&
+            (annotation->points.empty() || annotation->points.back() != current)) {
+            annotation->points.push_back(current);
+        } else if (annotation->kind == AnnotationKind::curved_arrow &&
+            !annotation->points.empty()) {
+            annotation->points.front() = {
+                (annotation->start.x + current.x) / 2,
+                ((annotation->start.y + current.y) / 2) - 40,
+            };
+        }
     }
     last_document_point_ = current;
     ::InvalidateRect(window_, nullptr, FALSE);
 }
 
 void EditorWindow::EndDocumentAction(const POINT client_point) {
-    if (!dragging_ && !creating_) {
+    if (!dragging_ && !creating_ && !resizing_ && !crop_drafting_) {
         return;
     }
     UpdateDocumentAction(client_point);
     ::ReleaseCapture();
     dragging_ = false;
     creating_ = false;
+    resizing_ = false;
+    crop_drafting_ = false;
     history_.Commit(action_before_, session_.model.Snapshot());
     ::InvalidateRect(window_, nullptr, FALSE);
 }
@@ -374,6 +522,141 @@ void EditorWindow::Redo() {
     if (history_.Redo(session_.model)) {
         ::InvalidateRect(window_, nullptr, FALSE);
     }
+}
+
+void EditorWindow::BeginTextEdit(const POINT client_point) {
+    CommitTextEdit();
+    action_before_ = session_.model.Snapshot();
+    text_origin_ = DocumentPoint(client_point);
+    const int width = static_cast<int>(std::lround(240.0F * scale_));
+    const int height = static_cast<int>(std::lround(90.0F * scale_));
+    text_edit_ = ::CreateWindowExW(
+        WS_EX_CLIENTEDGE,
+        L"EDIT",
+        L"",
+        WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_WANTRETURN | ES_AUTOVSCROLL,
+        client_point.x,
+        client_point.y,
+        std::max(width, 160),
+        std::max(height, 60),
+        window_,
+        nullptr,
+        instance_,
+        nullptr
+    );
+    if (text_edit_ == nullptr) {
+        return;
+    }
+    ::SetWindowSubclass(
+        text_edit_,
+        &EditorWindow::TextEditProcedure,
+        1,
+        reinterpret_cast<DWORD_PTR>(this)
+    );
+    ::SetFocus(text_edit_);
+}
+
+void EditorWindow::CommitTextEdit() {
+    if (text_edit_ == nullptr) {
+        return;
+    }
+    const int length = ::GetWindowTextLengthW(text_edit_);
+    std::wstring text(static_cast<std::size_t>(length) + 1, L'\0');
+    ::GetWindowTextW(text_edit_, text.data(), length + 1);
+    text.resize(static_cast<std::size_t>(length));
+    const HWND edit = text_edit_;
+    text_edit_ = nullptr;
+    ::RemoveWindowSubclass(edit, &EditorWindow::TextEditProcedure, 1);
+    ::DestroyWindow(edit);
+    if (text.empty()) {
+        return;
+    }
+    Annotation annotation{
+        .kind = AnnotationKind::text,
+        .start = text_origin_,
+        .end = {text_origin_.x + 240, text_origin_.y + 90},
+        .text = std::move(text),
+    };
+    static_cast<void>(session_.model.Add(std::move(annotation)));
+    history_.Commit(action_before_, session_.model.Snapshot());
+    ::InvalidateRect(window_, nullptr, FALSE);
+}
+
+void EditorWindow::CancelTextEdit() {
+    if (text_edit_ == nullptr) {
+        return;
+    }
+    const HWND edit = text_edit_;
+    text_edit_ = nullptr;
+    ::RemoveWindowSubclass(edit, &EditorWindow::TextEditProcedure, 1);
+    ::DestroyWindow(edit);
+    ::SetFocus(window_);
+}
+
+void EditorWindow::CopySelectedObject() {
+    if (!session_.model.state().selected.has_value()) {
+        return;
+    }
+    const Annotation* selected = session_.model.Find(*session_.model.state().selected);
+    if (selected != nullptr) {
+        object_clipboard_ = *selected;
+    }
+}
+
+void EditorWindow::PasteObject() {
+    if (!object_clipboard_.has_value()) {
+        auto image = exporting::ClipboardService::ReadImage(window_);
+        if (!image.has_value()) {
+            return;
+        }
+        const auto before = session_.model.Snapshot();
+        auto shared_image = std::make_shared<capture::PixelBuffer>(std::move(*image));
+        Annotation annotation{
+            .kind = AnnotationKind::image,
+            .start = {20, 20},
+            .end = {20 + shared_image->width, 20 + shared_image->height},
+            .image = std::move(shared_image),
+        };
+        static_cast<void>(session_.model.Add(std::move(annotation)));
+        history_.Commit(before, session_.model.Snapshot());
+        ::InvalidateRect(window_, nullptr, FALSE);
+        return;
+    }
+    const auto before = session_.model.Snapshot();
+    Annotation copy = *object_clipboard_;
+    copy.start.x += 12;
+    copy.start.y += 12;
+    copy.end.x += 12;
+    copy.end.y += 12;
+    for (auto& point : copy.points) {
+        point.x += 12;
+        point.y += 12;
+    }
+    static_cast<void>(session_.model.Add(std::move(copy)));
+    history_.Commit(before, session_.model.Snapshot());
+    ::InvalidateRect(window_, nullptr, FALSE);
+}
+
+LRESULT CALLBACK EditorWindow::TextEditProcedure(
+    const HWND window,
+    const UINT message,
+    const WPARAM w_param,
+    const LPARAM l_param,
+    const UINT_PTR,
+    const DWORD_PTR reference_data
+) {
+    auto* editor = reinterpret_cast<EditorWindow*>(reference_data);
+    if (message == WM_KEYDOWN) {
+        if (w_param == VK_ESCAPE) {
+            ::PostMessageW(editor->window_, kCancelTextEdit, 0, 0);
+            return 0;
+        }
+        if (w_param == VK_RETURN && (::GetKeyState(VK_CONTROL) & 0x8000) != 0) {
+            ::PostMessageW(editor->window_, kCommitTextEdit, 0, 0);
+            return 0;
+        }
+    }
+    return ::DefSubclassProc(window, message, w_param, l_param);
 }
 
 LRESULT CALLBACK EditorWindow::WindowProcedure(
@@ -403,7 +686,10 @@ LRESULT EditorWindow::HandleMessage(
 ) {
     switch (message) {
     case WM_COMMAND:
-        if (LOWORD(w_param) == kCopyButton) {
+        if (reinterpret_cast<HWND>(l_param) == text_edit_ &&
+            HIWORD(w_param) == EN_KILLFOCUS) {
+            ::PostMessageW(window_, kCommitTextEdit, 0, 0);
+        } else if (LOWORD(w_param) == kCopyButton) {
             CopyAndClose();
         } else if (LOWORD(w_param) == kSelectButton) {
             tool_ = Tool::select;
@@ -411,7 +697,36 @@ LRESULT EditorWindow::HandleMessage(
             tool_ = Tool::rectangle;
         } else if (LOWORD(w_param) == kLineButton) {
             tool_ = Tool::line;
+        } else if (LOWORD(w_param) == kEllipseButton) {
+            tool_ = Tool::ellipse;
+        } else if (LOWORD(w_param) == kStarButton) {
+            tool_ = Tool::star;
+        } else if (LOWORD(w_param) == kArrowButton) {
+            tool_ = Tool::arrow;
+        } else if (LOWORD(w_param) == kCurvedArrowButton) {
+            tool_ = Tool::curved_arrow;
+        } else if (LOWORD(w_param) == kMarkerButton) {
+            tool_ = Tool::marker;
+        } else if (LOWORD(w_param) == kTextButton) {
+            tool_ = Tool::text;
+        } else if (LOWORD(w_param) == kBlurButton) {
+            tool_ = Tool::blur;
+            if (!blur_warning_shown_) {
+                blur_warning_shown_ = true;
+                ::MessageBoxW(window_,
+                    L"Размытие не гарантирует необратимое сокрытие данных.",
+                    L"Screenshooter", MB_OK | MB_ICONINFORMATION);
+            }
+        } else if (LOWORD(w_param) == kCropButton) {
+            tool_ = Tool::crop;
         }
+        return 0;
+    case kCommitTextEdit:
+        CommitTextEdit();
+        ::SetFocus(window_);
+        return 0;
+    case kCancelTextEdit:
+        CancelTextEdit();
         return 0;
     case WM_SIZE:
         LayoutControls();
@@ -457,9 +772,33 @@ LRESULT EditorWindow::HandleMessage(
         ::ReleaseCapture();
         return 0;
     case WM_KEYDOWN:
+        if (w_param == VK_ESCAPE &&
+            (dragging_ || creating_ || resizing_ || crop_drafting_)) {
+            session_.model.Restore(action_before_);
+            dragging_ = false;
+            creating_ = false;
+            resizing_ = false;
+            crop_drafting_ = false;
+            ::ReleaseCapture();
+            ::InvalidateRect(window_, nullptr, FALSE);
+            return 0;
+        }
         if ((::GetKeyState(VK_CONTROL) & 0x8000) != 0) {
             if (w_param == 'C') {
-                CopyAndClose();
+                if (session_.model.state().selected.has_value()) {
+                    CopySelectedObject();
+                } else {
+                    CopyAndClose();
+                }
+                return 0;
+            }
+            if (w_param == 'X' && session_.model.state().selected.has_value()) {
+                CopySelectedObject();
+                DeleteSelection();
+                return 0;
+            }
+            if (w_param == 'V') {
+                PasteObject();
                 return 0;
             }
             if (w_param == '0') {
@@ -518,6 +857,7 @@ LRESULT EditorWindow::HandleMessage(
         Paint();
         return 0;
     case WM_CLOSE:
+        CommitTextEdit();
         if (!closing_after_export_ && session_.model.dirty() &&
             ::MessageBoxW(
                 window_,

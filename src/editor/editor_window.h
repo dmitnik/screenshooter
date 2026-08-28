@@ -6,6 +6,7 @@
 #include <windows.h>
 
 #include <memory>
+#include <optional>
 
 namespace screenshooter::editor {
 
@@ -25,7 +26,10 @@ public:
     static LRESULT CALLBACK WindowProcedure(HWND, UINT, WPARAM, LPARAM);
 
 private:
-    enum class Tool { select, rectangle, line };
+    enum class Tool {
+        select, rectangle, line, ellipse, star, arrow, curved_arrow, marker, text,
+        blur, crop
+    };
 
     EditorWindow(HINSTANCE instance, HWND host, DocumentSession session);
 
@@ -43,6 +47,15 @@ private:
     void DeleteSelection();
     void Undo();
     void Redo();
+    void BeginTextEdit(POINT client_point);
+    void CommitTextEdit();
+    void CancelTextEdit();
+    void CopySelectedObject();
+    void PasteObject();
+    static LRESULT CALLBACK TextEditProcedure(
+        HWND window, UINT message, WPARAM w_param, LPARAM l_param,
+        UINT_PTR subclass_id, DWORD_PTR reference_data
+    );
     LRESULT HandleMessage(UINT message, WPARAM w_param, LPARAM l_param);
 
     HINSTANCE instance_{};
@@ -54,6 +67,15 @@ private:
     HWND select_button_{};
     HWND rectangle_button_{};
     HWND line_button_{};
+    HWND ellipse_button_{};
+    HWND star_button_{};
+    HWND arrow_button_{};
+    HWND curved_arrow_button_{};
+    HWND marker_button_{};
+    HWND text_button_{};
+    HWND blur_button_{};
+    HWND crop_button_{};
+    HWND text_edit_{};
     DocumentSession session_;
     CommandHistory history_;
     Tool tool_{Tool::select};
@@ -64,11 +86,17 @@ private:
     bool panning_{};
     POINT last_pan_{};
     bool dragging_{};
+    bool resizing_{};
+    bool crop_drafting_{};
+    bool blur_warning_shown_{};
     bool creating_{};
     bool closing_after_export_{};
     platform::PixelPoint last_document_point_{};
+    platform::PixelPoint action_anchor_{};
     AnnotationId active_annotation_{};
     DocumentState action_before_;
+    platform::PixelPoint text_origin_{};
+    std::optional<Annotation> object_clipboard_;
 };
 
 }  // namespace screenshooter::editor

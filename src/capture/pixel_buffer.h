@@ -14,6 +14,8 @@ struct PixelBuffer {
     std::int32_t stride{};
     std::vector<std::byte> pixels;
 
+    friend bool operator==(const PixelBuffer&, const PixelBuffer&) = default;
+
     [[nodiscard]] bool empty() const noexcept;
     [[nodiscard]] const std::byte* row(std::int32_t y) const noexcept;
     [[nodiscard]] std::byte* row(std::int32_t y) noexcept;

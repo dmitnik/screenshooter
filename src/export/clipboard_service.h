@@ -4,6 +4,8 @@
 
 #include <windows.h>
 
+#include <optional>
+
 namespace screenshooter::exporting {
 
 class ClipboardService final {
@@ -12,6 +14,7 @@ public:
         HWND owner,
         const capture::PixelBuffer& image
     );
+    [[nodiscard]] static std::optional<capture::PixelBuffer> ReadImage(HWND owner);
 };
 
 }  // namespace screenshooter::exporting

@@ -31,9 +31,43 @@ double DistanceToSegment(
 
 bool Hits(const Annotation& annotation, const platform::PixelPoint point) {
     constexpr std::int32_t kTolerance = 7;
-    if (annotation.kind == AnnotationKind::line) {
+    if (annotation.kind == AnnotationKind::line ||
+        annotation.kind == AnnotationKind::arrow) {
         return DistanceToSegment(point, annotation.start, annotation.end) <=
             std::max(kTolerance, annotation.thickness + 3);
+    }
+    if (annotation.kind == AnnotationKind::curved_arrow && !annotation.points.empty()) {
+        platform::PixelPoint previous = annotation.start;
+        for (int step = 1; step <= 24; ++step) {
+            const double t = step / 24.0;
+            const double inverse = 1.0 - t;
+            const platform::PixelPoint current{
+                static_cast<std::int32_t>(std::lround(
+                    (inverse * inverse * annotation.start.x) +
+                    (2.0 * inverse * t * annotation.points.front().x) +
+                    (t * t * annotation.end.x))),
+                static_cast<std::int32_t>(std::lround(
+                    (inverse * inverse * annotation.start.y) +
+                    (2.0 * inverse * t * annotation.points.front().y) +
+                    (t * t * annotation.end.y))),
+            };
+            if (DistanceToSegment(point, previous, current) <=
+                std::max(kTolerance, annotation.thickness + 3)) {
+                return true;
+            }
+            previous = current;
+        }
+        return false;
+    }
+    if (annotation.kind == AnnotationKind::marker) {
+        for (std::size_t index = 1; index < annotation.points.size(); ++index) {
+            if (DistanceToSegment(point, annotation.points[index - 1],
+                    annotation.points[index]) <=
+                std::max(kTolerance, annotation.thickness + 3)) {
+                return true;
+            }
+        }
+        return false;
     }
     const auto bounds = platform::Normalize(annotation.start, annotation.end);
     const platform::PixelRect outer{
@@ -48,6 +82,10 @@ bool Hits(const Annotation& annotation, const platform::PixelPoint point) {
         bounds.right - kTolerance,
         bounds.bottom - kTolerance,
     };
+    if (annotation.kind == AnnotationKind::text ||
+        annotation.kind == AnnotationKind::image) {
+        return platform::Contains(outer, point);
+    }
     return platform::Contains(outer, point) &&
         (inner.empty() || !platform::Contains(inner, point));
 }
@@ -99,6 +137,10 @@ bool DocumentModel::Move(const AnnotationId id, const platform::PixelPoint delta
     annotation->start.y += delta.y;
     annotation->end.x += delta.x;
     annotation->end.y += delta.y;
+    for (auto& point : annotation->points) {
+        point.x += delta.x;
+        point.y += delta.y;
+    }
     return true;
 }
 
@@ -134,6 +176,14 @@ std::optional<AnnotationId> DocumentModel::HitTest(
 
 void DocumentModel::Select(const std::optional<AnnotationId> id) noexcept {
     state_.selected = id;
+}
+
+void DocumentModel::SetCrop(const platform::PixelRect crop) noexcept {
+    const platform::PixelRect source_bounds{0, 0, source_.width, source_.height};
+    const auto clipped = platform::Intersect(crop, source_bounds);
+    if (!clipped.empty()) {
+        state_.crop = clipped;
+    }
 }
 
 bool DocumentModel::dirty() const noexcept {

@@ -4,7 +4,9 @@
 #include "platform/geometry.h"
 
 #include <cstdint>
+#include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace screenshooter::editor {
@@ -14,6 +16,14 @@ using AnnotationId = std::uint64_t;
 enum class AnnotationKind {
     rectangle,
     line,
+    ellipse,
+    star,
+    arrow,
+    curved_arrow,
+    marker,
+    text,
+    image,
+    blur,
 };
 
 struct Annotation {
@@ -23,6 +33,9 @@ struct Annotation {
     platform::PixelPoint end{};
     std::uint32_t color{0xFFE53935};
     std::int32_t thickness{4};
+    std::vector<platform::PixelPoint> points;
+    std::wstring text;
+    std::shared_ptr<const capture::PixelBuffer> image;
 
     friend bool operator==(const Annotation&, const Annotation&) = default;
 };
@@ -51,6 +64,7 @@ public:
     [[nodiscard]] const Annotation* Find(AnnotationId id) const noexcept;
     [[nodiscard]] std::optional<AnnotationId> HitTest(platform::PixelPoint point) const;
     void Select(std::optional<AnnotationId> id) noexcept;
+    void SetCrop(platform::PixelRect crop) noexcept;
 
     [[nodiscard]] bool dirty() const noexcept;
     void MarkClean() { clean_state_ = state_; }

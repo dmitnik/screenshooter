@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <cstring>
+#include <optional>
 
 namespace screenshooter::exporting {
 namespace {
@@ -146,6 +147,48 @@ bool ClipboardService::CopyImage(
         ::GlobalFree(png);
     }
     return dib_transferred && png_transferred;
+}
+
+std::optional<capture::PixelBuffer> ClipboardService::ReadImage(const HWND owner) {
+    if (!::OpenClipboard(owner)) {
+        return std::nullopt;
+    }
+    HANDLE handle = ::GetClipboardData(CF_DIBV5);
+    if (handle == nullptr) {
+        ::CloseClipboard();
+        return std::nullopt;
+    }
+    const auto* header = static_cast<const BITMAPV5HEADER*>(::GlobalLock(handle));
+    if (header == nullptr || header->bV5Size < sizeof(BITMAPV5HEADER) ||
+        header->bV5BitCount != 32 || header->bV5Width <= 0 || header->bV5Height == 0) {
+        if (header != nullptr) {
+            ::GlobalUnlock(handle);
+        }
+        ::CloseClipboard();
+        return std::nullopt;
+    }
+
+    const auto width = static_cast<std::int32_t>(header->bV5Width);
+    const auto height = static_cast<std::int32_t>(std::abs(header->bV5Height));
+    capture::PixelBuffer image = capture::CreateOpaqueBuffer(width, height);
+    const auto required = static_cast<std::size_t>(header->bV5Size) + image.pixels.size();
+    if (image.empty() || ::GlobalSize(handle) < required) {
+        ::GlobalUnlock(handle);
+        ::CloseClipboard();
+        return std::nullopt;
+    }
+    const auto* pixels = reinterpret_cast<const std::byte*>(header) + header->bV5Size;
+    for (std::int32_t y = 0; y < height; ++y) {
+        const std::int32_t source_y = header->bV5Height < 0 ? y : height - 1 - y;
+        std::memcpy(
+            image.row(y),
+            pixels + (static_cast<std::size_t>(source_y) * image.stride),
+            static_cast<std::size_t>(image.stride)
+        );
+    }
+    ::GlobalUnlock(handle);
+    ::CloseClipboard();
+    return image;
 }
 
 }  // namespace screenshooter::exporting
