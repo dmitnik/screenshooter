@@ -1,6 +1,6 @@
 #pragma once
 
-#include "capture/pixel_buffer.h"
+#include "editor/document_model.h"
 
 #include <cstdint>
 
@@ -8,7 +8,7 @@ namespace screenshooter::editor {
 
 struct DocumentSession {
     std::uint64_t id{};
-    capture::PixelBuffer image;
+    DocumentModel model;
 };
 
 [[nodiscard]] DocumentSession CreateSession(capture::PixelBuffer image);

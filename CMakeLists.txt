@@ -15,6 +15,9 @@ option(SCREENSHOOTER_BUILD_SPIKES "Build technical spike runner" ON)
 add_library(screenshooter_core STATIC
     src/capture/capture_service.cpp
     src/capture/pixel_buffer.cpp
+    src/editor/command_history.cpp
+    src/editor/document_model.cpp
+    src/editor/document_renderer.cpp
     src/export/clipboard_service.cpp
     src/platform/dpi.cpp
     src/platform/geometry.cpp
@@ -133,6 +136,7 @@ if(BUILD_TESTING AND SCREENSHOOTER_BUILD_TESTS)
 
     add_executable(unit_tests
         tests/unit/pixel_buffer_tests.cpp
+        tests/unit/document_model_tests.cpp
         tests/unit/dpi_tests.cpp
         tests/unit/geometry_tests.cpp
         tests/unit/unique_handle_tests.cpp
