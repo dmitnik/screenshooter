@@ -2,6 +2,7 @@
 
 #include "editor/document_session.h"
 #include "editor/command_history.h"
+#include "export/share_service.h"
 
 #include <windows.h>
 
@@ -39,6 +40,9 @@ private:
     void Paint();
     void ZoomAt(POINT client_point, float factor);
     void CopyAndClose();
+    void SaveAs();
+    void Share();
+    void InsertImageFile(const wchar_t* path);
     [[nodiscard]] platform::PixelPoint DocumentPoint(POINT client_point) const noexcept;
     [[nodiscard]] bool IsCanvasPoint(POINT client_point) const noexcept;
     void BeginDocumentAction(POINT client_point);
@@ -97,6 +101,7 @@ private:
     DocumentState action_before_;
     platform::PixelPoint text_origin_{};
     std::optional<Annotation> object_clipboard_;
+    exporting::ShareService share_service_;
 };
 
 }  // namespace screenshooter::editor

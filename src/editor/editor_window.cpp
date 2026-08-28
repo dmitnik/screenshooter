@@ -3,15 +3,20 @@
 #include "app/messages.h"
 #include "editor/document_renderer.h"
 #include "export/clipboard_service.h"
+#include "export/image_file_service.h"
 #include "platform/dpi.h"
 
 #include <windowsx.h>
 #include <commctrl.h>
+#include <shellapi.h>
+#include <shobjidl_core.h>
+#include <wrl/client.h>
 
 #include <algorithm>
 #include <cmath>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace screenshooter::editor {
 namespace {
@@ -166,8 +171,9 @@ void EditorWindow::CreateControls() {
         0, L"BUTTON", L"Поделиться", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         0, 0, 0, 0, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kShareButton)),
         instance_, nullptr);
-    ::EnableWindow(save_button_, FALSE);
-    ::EnableWindow(share_button_, FALSE);
+    ::EnableWindow(save_button_, TRUE);
+    ::EnableWindow(share_button_, TRUE);
+    ::DragAcceptFiles(window_, TRUE);
 }
 
 void EditorWindow::LayoutControls() {
@@ -345,6 +351,95 @@ void EditorWindow::CopyAndClose() {
             MB_OK | MB_ICONERROR
         );
     }
+}
+
+void EditorWindow::SaveAs() {
+    const auto rendered = DocumentRenderer::Render(session_.model);
+    Microsoft::WRL::ComPtr<IFileSaveDialog> dialog;
+    if (FAILED(::CoCreateInstance(
+            CLSID_FileSaveDialog,
+            nullptr,
+            CLSCTX_INPROC_SERVER,
+            IID_PPV_ARGS(&dialog)))) {
+        ::MessageBoxW(window_, L"Не удалось открыть диалог сохранения.",
+            L"Screenshooter", MB_OK | MB_ICONERROR);
+        return;
+    }
+    const COMDLG_FILTERSPEC filters[]{
+        {L"PNG изображение", L"*.png"},
+        {L"JPEG изображение", L"*.jpg;*.jpeg"},
+    };
+    dialog->SetFileTypes(ARRAYSIZE(filters), filters);
+    dialog->SetFileTypeIndex(1);
+    dialog->SetDefaultExtension(L"png");
+    const std::wstring default_name = L"Снимок " + std::to_wstring(session_.id);
+    dialog->SetFileName(default_name.c_str());
+    const HRESULT shown = dialog->Show(window_);
+    if (shown == HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
+        return;
+    }
+    Microsoft::WRL::ComPtr<IShellItem> item;
+    PWSTR path = nullptr;
+    UINT file_type = 1;
+    if (FAILED(shown) || FAILED(dialog->GetResult(&item)) ||
+        FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)) || path == nullptr) {
+        ::MessageBoxW(window_, L"Не удалось выбрать путь сохранения.",
+            L"Screenshooter", MB_OK | MB_ICONERROR);
+        return;
+    }
+    dialog->GetFileTypeIndex(&file_type);
+    const auto format = file_type == 2
+        ? exporting::ImageFormat::jpeg
+        : exporting::ImageFormat::png;
+    const bool saved = exporting::ImageFileService::Save(path, rendered, format);
+    ::CoTaskMemFree(path);
+    if (saved) {
+        session_.model.MarkClean();
+        ::MessageBoxW(window_, L"Изображение сохранено.",
+            L"Screenshooter", MB_OK | MB_ICONINFORMATION);
+    } else {
+        ::MessageBoxW(window_, L"Не удалось сохранить изображение.",
+            L"Screenshooter", MB_OK | MB_ICONERROR);
+    }
+}
+
+void EditorWindow::Share() {
+    const auto rendered = DocumentRenderer::Render(session_.model);
+    if (!share_service_.Show(window_, rendered)) {
+        ::MessageBoxW(window_,
+            L"Не удалось открыть системную панель «Поделиться».",
+            L"Screenshooter", MB_OK | MB_ICONERROR);
+    }
+}
+
+void EditorWindow::InsertImageFile(const wchar_t* path) {
+    auto image = exporting::ImageFileService::Load(path);
+    if (!image.has_value()) {
+        ::MessageBoxW(window_, L"Не удалось открыть изображение.",
+            L"Screenshooter", MB_OK | MB_ICONERROR);
+        return;
+    }
+    const auto before = session_.model.Snapshot();
+    auto shared_image = std::make_shared<capture::PixelBuffer>(std::move(*image));
+    const int maximum_width = std::max(1, session_.model.source().width - 40);
+    const int maximum_height = std::max(1, session_.model.source().height - 40);
+    const double scale = std::min({
+        1.0,
+        maximum_width / static_cast<double>(shared_image->width),
+        maximum_height / static_cast<double>(shared_image->height),
+    });
+    Annotation annotation{
+        .kind = AnnotationKind::image,
+        .start = {20, 20},
+        .end = {
+            20 + static_cast<int>(std::lround(shared_image->width * scale)),
+            20 + static_cast<int>(std::lround(shared_image->height * scale)),
+        },
+        .image = std::move(shared_image),
+    };
+    static_cast<void>(session_.model.Add(std::move(annotation)));
+    history_.Commit(before, session_.model.Snapshot());
+    ::InvalidateRect(window_, nullptr, FALSE);
 }
 
 platform::PixelPoint EditorWindow::DocumentPoint(const POINT client_point) const noexcept {
@@ -719,6 +814,10 @@ LRESULT EditorWindow::HandleMessage(
             }
         } else if (LOWORD(w_param) == kCropButton) {
             tool_ = Tool::crop;
+        } else if (LOWORD(w_param) == kSaveButton) {
+            SaveAs();
+        } else if (LOWORD(w_param) == kShareButton) {
+            Share();
         }
         return 0;
     case kCommitTextEdit:
@@ -743,6 +842,17 @@ LRESULT EditorWindow::HandleMessage(
         POINT point{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)};
         ::ScreenToClient(window_, &point);
         ZoomAt(point, GET_WHEEL_DELTA_WPARAM(w_param) > 0 ? 1.1F : (1.0F / 1.1F));
+        return 0;
+    }
+    case WM_DROPFILES: {
+        const HDROP drop = reinterpret_cast<HDROP>(w_param);
+        const UINT length = ::DragQueryFileW(drop, 0, nullptr, 0);
+        std::vector<wchar_t> path(static_cast<std::size_t>(length) + 1);
+        if (length > 0 && ::DragQueryFileW(drop, 0, path.data(),
+                static_cast<UINT>(path.size())) > 0) {
+            InsertImageFile(path.data());
+        }
+        ::DragFinish(drop);
         return 0;
     }
     case WM_LBUTTONDOWN:

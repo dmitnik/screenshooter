@@ -3,8 +3,12 @@
 #include "app/messages.h"
 #include "capture/capture_service.h"
 #include "editor/document_session.h"
+#include "export/share_service.h"
+#include "export/image_file_service.h"
 
 #include <commctrl.h>
+#include <shobjidl_core.h>
+#include <wrl/client.h>
 
 #include <memory>
 #include <utility>
@@ -30,6 +34,7 @@ Application::~Application() {
 }
 
 int Application::Run(const int) {
+    exporting::ShareService::CleanupOldFiles();
     INITCOMMONCONTROLSEX controls{
         .dwSize = sizeof(INITCOMMONCONTROLSEX),
         .dwICC = ICC_STANDARD_CLASSES,
@@ -163,8 +168,12 @@ void Application::HandleSelectionComplete(const WPARAM payload) {
         return;
     }
 
+    CreateEditor(std::move(*image));
+}
+
+void Application::CreateEditor(capture::PixelBuffer image) {
     auto editor = editor::EditorWindow::Create(
-        instance_, host_window_, editor::CreateSession(std::move(*image))
+        instance_, host_window_, editor::CreateSession(std::move(image))
     );
     if (editor == nullptr) {
         ::MessageBoxW(nullptr, L"Не удалось открыть снимок.",
@@ -175,10 +184,44 @@ void Application::HandleSelectionComplete(const WPARAM payload) {
     editors_.emplace(window, std::move(editor));
 }
 
+void Application::OpenImage() {
+    Microsoft::WRL::ComPtr<IFileOpenDialog> dialog;
+    if (FAILED(::CoCreateInstance(CLSID_FileOpenDialog, nullptr,
+            CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)))) {
+        return;
+    }
+    const COMDLG_FILTERSPEC filters[]{
+        {L"Изображения", L"*.png;*.jpg;*.jpeg;*.bmp;*.webp"},
+        {L"Все файлы", L"*.*"},
+    };
+    dialog->SetFileTypes(ARRAYSIZE(filters), filters);
+    const HRESULT shown = dialog->Show(host_window_);
+    if (shown == HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
+        return;
+    }
+    Microsoft::WRL::ComPtr<IShellItem> item;
+    PWSTR path = nullptr;
+    if (FAILED(shown) || FAILED(dialog->GetResult(&item)) ||
+        FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)) || path == nullptr) {
+        return;
+    }
+    auto image = exporting::ImageFileService::Load(path);
+    ::CoTaskMemFree(path);
+    if (image.has_value()) {
+        CreateEditor(std::move(*image));
+    } else {
+        ::MessageBoxW(nullptr, L"Формат изображения не поддерживается.",
+            kApplicationName, MB_OK | MB_ICONERROR);
+    }
+}
+
 void Application::HandleTrayCommand(const tray::TrayCommand command) {
     switch (command) {
     case tray::TrayCommand::capture_area:
         StartCapture();
+        break;
+    case tray::TrayCommand::open_image:
+        OpenImage();
         break;
     case tray::TrayCommand::exit_application:
         ExitApplication();

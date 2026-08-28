@@ -19,6 +19,8 @@ add_library(screenshooter_core STATIC
     src/editor/document_model.cpp
     src/editor/document_renderer.cpp
     src/export/clipboard_service.cpp
+    src/export/image_file_service.cpp
+    src/export/share_service.cpp
     src/platform/dpi.cpp
     src/platform/geometry.cpp
 )
@@ -31,6 +33,7 @@ target_link_libraries(screenshooter_core PUBLIC
     gdi32
     msimg32
     ole32
+    shlwapi
     user32
     windowscodecs
 )
@@ -154,6 +157,7 @@ if(BUILD_TESTING AND SCREENSHOOTER_BUILD_TESTS)
     catch_discover_tests(unit_tests)
 
     add_executable(integration_tests
+        tests/integration/image_file_tests.cpp
         tests/integration/platform_smoke_tests.cpp
     )
 

@@ -7,6 +7,7 @@ namespace {
 
 constexpr UINT kCaptureCommand = 2001;
 constexpr UINT kExitCommand = 2002;
+constexpr UINT kOpenCommand = 2003;
 
 }  // namespace
 
@@ -68,6 +69,7 @@ TrayCommand TrayHost::ShowContextMenu() const {
     }
 
     ::AppendMenuW(menu, MF_STRING, kCaptureCommand, L"Снимок области\tCtrl+Shift+1");
+    ::AppendMenuW(menu, MF_STRING, kOpenCommand, L"Открыть изображение…");
     ::AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     ::AppendMenuW(menu, MF_STRING, kExitCommand, L"Выход");
     ::SetForegroundWindow(owner_);
@@ -83,6 +85,9 @@ TrayCommand TrayHost::ShowContextMenu() const {
 
     if (command == kCaptureCommand) {
         return TrayCommand::capture_area;
+    }
+    if (command == kOpenCommand) {
+        return TrayCommand::open_image;
     }
     if (command == kExitCommand) {
         return TrayCommand::exit_application;

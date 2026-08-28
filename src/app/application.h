@@ -28,6 +28,8 @@ private:
     void HandleCaptureReady(WPARAM payload);
     void HandleSelectionComplete(WPARAM payload);
     void HandleTrayCommand(tray::TrayCommand command);
+    void OpenImage();
+    void CreateEditor(capture::PixelBuffer image);
     void ExitApplication();
 
     static LRESULT CALLBACK WindowProcedure(HWND, UINT, WPARAM, LPARAM);
