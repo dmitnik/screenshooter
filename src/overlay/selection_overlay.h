@@ -26,6 +26,9 @@ private:
     SelectionOverlay(HINSTANCE instance, HWND host, capture::CaptureFrame frame);
 
     [[nodiscard]] bool CreateNativeWindow();
+    [[nodiscard]] bool EnsurePaintBuffer(HDC reference, int width, int height);
+    void ReleasePaintBuffer() noexcept;
+    void RepaintImmediately() const;
     void Paint();
     void FinishSelection();
     [[nodiscard]] platform::PixelPoint CursorPosition() const noexcept;
@@ -34,6 +37,10 @@ private:
     HINSTANCE instance_{};
     HWND host_{};
     HWND window_{};
+    HDC paint_buffer_dc_{};
+    HBITMAP paint_buffer_bitmap_{};
+    HGDIOBJ paint_buffer_previous_{};
+    SIZE paint_buffer_size_{};
     capture::CaptureFrame frame_;
     platform::PixelPoint anchor_{};
     platform::PixelPoint cursor_{};

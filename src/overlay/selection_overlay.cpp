@@ -63,6 +63,7 @@ SelectionOverlay::~SelectionOverlay() {
     if (window_ != nullptr) {
         ::DestroyWindow(window_);
     }
+    ReleasePaintBuffer();
 }
 
 bool SelectionOverlay::CreateNativeWindow() {
@@ -92,6 +93,57 @@ bool SelectionOverlay::CreateNativeWindow() {
     ::SetFocus(window_);
     ::UpdateWindow(window_);
     return true;
+}
+
+bool SelectionOverlay::EnsurePaintBuffer(
+    const HDC reference,
+    const int width,
+    const int height
+) {
+    if (paint_buffer_dc_ != nullptr && paint_buffer_bitmap_ != nullptr &&
+        paint_buffer_size_.cx == width && paint_buffer_size_.cy == height) {
+        return true;
+    }
+    ReleasePaintBuffer();
+    paint_buffer_dc_ = ::CreateCompatibleDC(reference);
+    paint_buffer_bitmap_ = ::CreateCompatibleBitmap(
+        reference, std::max(1, width), std::max(1, height));
+    if (paint_buffer_dc_ == nullptr || paint_buffer_bitmap_ == nullptr) {
+        ReleasePaintBuffer();
+        return false;
+    }
+    paint_buffer_previous_ = ::SelectObject(paint_buffer_dc_, paint_buffer_bitmap_);
+    if (paint_buffer_previous_ == nullptr || paint_buffer_previous_ == HGDI_ERROR) {
+        ReleasePaintBuffer();
+        return false;
+    }
+    paint_buffer_size_ = {width, height};
+    return true;
+}
+
+void SelectionOverlay::ReleasePaintBuffer() noexcept {
+    if (paint_buffer_dc_ != nullptr && paint_buffer_previous_ != nullptr &&
+        paint_buffer_previous_ != HGDI_ERROR) {
+        ::SelectObject(paint_buffer_dc_, paint_buffer_previous_);
+    }
+    if (paint_buffer_bitmap_ != nullptr) {
+        ::DeleteObject(paint_buffer_bitmap_);
+    }
+    if (paint_buffer_dc_ != nullptr) {
+        ::DeleteDC(paint_buffer_dc_);
+    }
+    paint_buffer_dc_ = nullptr;
+    paint_buffer_bitmap_ = nullptr;
+    paint_buffer_previous_ = nullptr;
+    paint_buffer_size_ = {};
+}
+
+void SelectionOverlay::RepaintImmediately() const {
+    if (window_ == nullptr) {
+        return;
+    }
+    ::InvalidateRect(window_, nullptr, FALSE);
+    ::UpdateWindow(window_);
 }
 
 void SelectionOverlay::Cancel() {
@@ -164,7 +216,11 @@ void SelectionOverlay::FinishSelection() {
 
 void SelectionOverlay::Paint() {
     PAINTSTRUCT paint{};
-    HDC dc = ::BeginPaint(window_, &paint);
+    HDC paint_dc = ::BeginPaint(window_, &paint);
+    RECT client{};
+    ::GetClientRect(window_, &client);
+    const bool buffered = EnsurePaintBuffer(paint_dc, client.right, client.bottom);
+    HDC dc = buffered ? paint_buffer_dc_ : paint_dc;
     const auto& image = frame_.pixels;
     BITMAPINFO bitmap_info{};
     bitmap_info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -178,8 +234,6 @@ void SelectionOverlay::Paint() {
         image.pixels.data(), &bitmap_info, DIB_RGB_COLORS
     );
 
-    RECT client{};
-    ::GetClientRect(window_, &client);
     HDC dim_dc = ::CreateCompatibleDC(dc);
     HBITMAP dim_bitmap = ::CreateCompatibleBitmap(dc, 1, 1);
     HGDIOBJ old_bitmap = ::SelectObject(dim_dc, dim_bitmap);
@@ -227,6 +281,10 @@ void SelectionOverlay::Paint() {
                 DT_CENTER | DT_SINGLELINE | DT_VCENTER);
         }
     }
+    if (buffered) {
+        ::BitBlt(paint_dc, 0, 0, client.right, client.bottom,
+            paint_buffer_dc_, 0, 0, SRCCOPY);
+    }
     ::EndPaint(window_, &paint);
 }
 
@@ -263,12 +321,15 @@ LRESULT SelectionOverlay::HandleMessage(
         cursor_ = anchor_;
         selecting_ = true;
         ::SetCapture(window_);
-        ::InvalidateRect(window_, nullptr, FALSE);
+        RepaintImmediately();
         return 0;
     case WM_MOUSEMOVE:
         if (selecting_) {
-            cursor_ = CursorPosition();
-            ::InvalidateRect(window_, nullptr, FALSE);
+            const auto position = CursorPosition();
+            if (position != cursor_) {
+                cursor_ = position;
+                RepaintImmediately();
+            }
         }
         return 0;
     case WM_LBUTTONUP:
