@@ -356,7 +356,7 @@ void EditorWindow::Paint() {
     ::FillRect(dc, &toolbar_rect, toolbar_brush);
     ::DeleteObject(toolbar_brush);
 
-    const auto rendered = DocumentRenderer::Render(session_.model, crop_applied_);
+    const auto rendered = DocumentRenderer::Render(session_.model, false);
     if (rendered.empty()) {
         finish_paint();
         return;
@@ -430,7 +430,7 @@ void EditorWindow::Paint() {
     const platform::PixelRect full{
         0, 0, session_.model.source().width, session_.model.source().height
     };
-    if (!crop_applied_ && session_.model.state().crop != full) {
+    if (session_.model.state().crop != full) {
         const auto crop = session_.model.state().crop;
         RECT crop_rect{
             static_cast<LONG>(std::lround(offset_x_ + (crop.left * scale_))),
@@ -480,9 +480,7 @@ void EditorWindow::InvalidateCanvas() const {
 }
 
 platform::PixelRect EditorWindow::VisibleDocumentBounds() const noexcept {
-    const platform::PixelRect full{
-        0, 0, session_.model.source().width, session_.model.source().height};
-    return crop_applied_ ? session_.model.state().crop : full;
+    return {0, 0, session_.model.source().width, session_.model.source().height};
 }
 
 void EditorWindow::ShowCropActions(const bool visible) const {
@@ -499,8 +497,6 @@ void EditorWindow::EnterCropMode() {
     }
     CommitTextEdit();
     crop_mode_before_ = session_.model.Snapshot();
-    crop_was_applied_ = crop_applied_;
-    crop_applied_ = false;
     session_.model.Select(std::nullopt);
     tool_ = Tool::crop;
     fit_ = true;
@@ -512,10 +508,12 @@ void EditorWindow::ApplyCrop() {
     if (tool_ != Tool::crop) {
         return;
     }
+    if (!session_.model.ApplyCrop()) {
+        ::MessageBoxW(window_, L"Не удалось применить обрезку.",
+            L"Screenshooter", MB_OK | MB_ICONERROR);
+        return;
+    }
     history_.Commit(crop_mode_before_, session_.model.Snapshot());
-    const auto& source = session_.model.source();
-    const platform::PixelRect full{0, 0, source.width, source.height};
-    crop_applied_ = session_.model.state().crop != full;
     tool_ = Tool::select;
     fit_ = true;
     ShowCropActions(false);
@@ -527,7 +525,6 @@ void EditorWindow::CancelCrop() {
         return;
     }
     session_.model.Restore(crop_mode_before_);
-    crop_applied_ = crop_was_applied_;
     tool_ = Tool::select;
     fit_ = true;
     ShowCropActions(false);

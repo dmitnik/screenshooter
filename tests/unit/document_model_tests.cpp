@@ -10,6 +10,7 @@ using screenshooter::editor::CommandHistory;
 using screenshooter::editor::DocumentModel;
 using screenshooter::editor::DocumentRenderer;
 using screenshooter::platform::PixelPoint;
+using screenshooter::platform::PixelRect;
 
 TEST_CASE("Hit testing returns the topmost annotation") {
     DocumentModel model(CreateOpaqueBuffer(100, 100));
@@ -170,7 +171,7 @@ TEST_CASE("Pixelation fills each mosaic block with one averaged color") {
         std::to_integer<unsigned>(rendered.row(0)[16 * 4]));
 }
 
-TEST_CASE("Crop is non-destructive and controls exported dimensions") {
+TEST_CASE("Crop preview is non-destructive and controls exported dimensions") {
     DocumentModel model(CreateOpaqueBuffer(80, 60));
     model.SetCrop({10, 15, 70, 50});
     REQUIRE(model.source().width == 80);
@@ -178,4 +179,40 @@ TEST_CASE("Crop is non-destructive and controls exported dimensions") {
     REQUIRE(DocumentRenderer::Render(model).width == 60);
     REQUIRE(DocumentRenderer::Render(model).height == 35);
     REQUIRE(DocumentRenderer::Render(model, false).width == 80);
+}
+
+TEST_CASE("Applied crop becomes the new source and supports another crop") {
+    DocumentModel model(CreateOpaqueBuffer(80, 60));
+    static_cast<void>(model.Add(Annotation{
+        .kind = AnnotationKind::rectangle,
+        .start = {15, 20},
+        .end = {35, 40},
+    }));
+    const auto before = model.Snapshot();
+    model.SetCrop({10, 15, 70, 50});
+    REQUIRE(model.ApplyCrop());
+    REQUIRE(model.source().width == 60);
+    REQUIRE(model.source().height == 35);
+    REQUIRE(model.state().crop == PixelRect{0, 0, 60, 35});
+    REQUIRE(model.state().annotations.front().start == PixelPoint{5, 5});
+
+    CommandHistory history;
+    history.Commit(before, model.Snapshot());
+    REQUIRE(history.Undo(model));
+    REQUIRE(model.source().width == 80);
+    REQUIRE(model.source().height == 60);
+    REQUIRE(history.Redo(model));
+    REQUIRE(model.source().width == 60);
+
+    model.SetCrop({5, 5, 30, 25});
+    REQUIRE(model.ApplyCrop());
+    REQUIRE(model.source().width == 25);
+    REQUIRE(model.source().height == 20);
+}
+
+TEST_CASE("Applied crop marks an otherwise clean document as changed") {
+    DocumentModel model(CreateOpaqueBuffer(40, 30));
+    model.SetCrop({5, 5, 30, 20});
+    REQUIRE(model.ApplyCrop());
+    REQUIRE(model.dirty());
 }

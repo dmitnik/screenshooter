@@ -107,8 +107,6 @@ private:
     bool dragging_{};
     bool resizing_{};
     bool crop_drafting_{};
-    bool crop_applied_{};
-    bool crop_was_applied_{};
     bool blur_warning_shown_{};
     bool creating_{};
     bool closing_after_export_{};

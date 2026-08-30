@@ -93,12 +93,16 @@ bool Hits(const Annotation& annotation, const platform::PixelPoint point) {
 }  // namespace
 
 DocumentModel::DocumentModel(capture::PixelBuffer source)
-    : source_(std::move(source)) {
-    state_.crop = {0, 0, source_.width, source_.height};
+{
+    state_.source = std::make_shared<const capture::PixelBuffer>(std::move(source));
+    state_.crop = {0, 0, state_.source->width, state_.source->height};
     clean_state_ = state_;
 }
 
 void DocumentModel::Restore(DocumentState state) {
+    if (state.source == nullptr) {
+        return;
+    }
     state_ = std::move(state);
     for (const auto& annotation : state_.annotations) {
         next_id_ = std::max(next_id_, annotation.id + 1);
@@ -179,15 +183,50 @@ void DocumentModel::Select(const std::optional<AnnotationId> id) noexcept {
 }
 
 void DocumentModel::SetCrop(const platform::PixelRect crop) noexcept {
-    const platform::PixelRect source_bounds{0, 0, source_.width, source_.height};
+    const auto& image = source();
+    const platform::PixelRect source_bounds{0, 0, image.width, image.height};
     const auto clipped = platform::Intersect(crop, source_bounds);
     if (!clipped.empty()) {
         state_.crop = clipped;
     }
 }
 
+bool DocumentModel::ApplyCrop() {
+    const auto& image = source();
+    const platform::PixelRect full{0, 0, image.width, image.height};
+    const auto applied = platform::Intersect(state_.crop, full);
+    if (applied.empty()) {
+        return false;
+    }
+    if (applied == full) {
+        state_.crop = full;
+        state_.selected.reset();
+        return true;
+    }
+    auto cropped = capture::Crop(image, applied);
+    if (cropped.empty()) {
+        return false;
+    }
+    const platform::PixelPoint shift{-applied.left, -applied.top};
+    for (auto& annotation : state_.annotations) {
+        annotation.start.x += shift.x;
+        annotation.start.y += shift.y;
+        annotation.end.x += shift.x;
+        annotation.end.y += shift.y;
+        for (auto& point : annotation.points) {
+            point.x += shift.x;
+            point.y += shift.y;
+        }
+    }
+    state_.source = std::make_shared<const capture::PixelBuffer>(std::move(cropped));
+    state_.crop = {0, 0, state_.source->width, state_.source->height};
+    state_.selected.reset();
+    return true;
+}
+
 bool DocumentModel::dirty() const noexcept {
-    return state_.annotations != clean_state_.annotations ||
+    return state_.source != clean_state_.source ||
+        state_.annotations != clean_state_.annotations ||
         state_.crop != clean_state_.crop;
 }
 

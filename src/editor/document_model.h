@@ -41,6 +41,7 @@ struct Annotation {
 };
 
 struct DocumentState {
+    std::shared_ptr<const capture::PixelBuffer> source;
     std::vector<Annotation> annotations;
     platform::PixelRect crop{};
     std::optional<AnnotationId> selected;
@@ -52,7 +53,9 @@ class DocumentModel final {
 public:
     explicit DocumentModel(capture::PixelBuffer source);
 
-    [[nodiscard]] const capture::PixelBuffer& source() const noexcept { return source_; }
+    [[nodiscard]] const capture::PixelBuffer& source() const noexcept {
+        return *state_.source;
+    }
     [[nodiscard]] const DocumentState& state() const noexcept { return state_; }
     [[nodiscard]] DocumentState Snapshot() const { return state_; }
     void Restore(DocumentState state);
@@ -65,12 +68,12 @@ public:
     [[nodiscard]] std::optional<AnnotationId> HitTest(platform::PixelPoint point) const;
     void Select(std::optional<AnnotationId> id) noexcept;
     void SetCrop(platform::PixelRect crop) noexcept;
+    [[nodiscard]] bool ApplyCrop();
 
     [[nodiscard]] bool dirty() const noexcept;
     void MarkClean() { clean_state_ = state_; }
 
 private:
-    capture::PixelBuffer source_;
     DocumentState state_;
     DocumentState clean_state_;
     AnnotationId next_id_{1};
