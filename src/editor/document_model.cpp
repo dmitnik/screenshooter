@@ -1,6 +1,7 @@
 #include "editor/document_model.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <utility>
 
@@ -36,29 +37,6 @@ bool Hits(const Annotation& annotation, const platform::PixelPoint point) {
         return DistanceToSegment(point, annotation.start, annotation.end) <=
             std::max(kTolerance, annotation.thickness + 3);
     }
-    if (annotation.kind == AnnotationKind::curved_arrow && !annotation.points.empty()) {
-        platform::PixelPoint previous = annotation.start;
-        for (int step = 1; step <= 24; ++step) {
-            const double t = step / 24.0;
-            const double inverse = 1.0 - t;
-            const platform::PixelPoint current{
-                static_cast<std::int32_t>(std::lround(
-                    (inverse * inverse * annotation.start.x) +
-                    (2.0 * inverse * t * annotation.points.front().x) +
-                    (t * t * annotation.end.x))),
-                static_cast<std::int32_t>(std::lround(
-                    (inverse * inverse * annotation.start.y) +
-                    (2.0 * inverse * t * annotation.points.front().y) +
-                    (t * t * annotation.end.y))),
-            };
-            if (DistanceToSegment(point, previous, current) <=
-                std::max(kTolerance, annotation.thickness + 3)) {
-                return true;
-            }
-            previous = current;
-        }
-        return false;
-    }
     if (annotation.kind == AnnotationKind::marker) {
         for (std::size_t index = 1; index < annotation.points.size(); ++index) {
             if (DistanceToSegment(point, annotation.points[index - 1],
@@ -91,6 +69,37 @@ bool Hits(const Annotation& annotation, const platform::PixelPoint point) {
 }
 
 }  // namespace
+
+platform::PixelPoint DefaultArrowEnd(
+    const platform::PixelPoint start,
+    const platform::PixelRect bounds
+) noexcept {
+    if (bounds.empty()) {
+        return start;
+    }
+
+    struct Direction {
+        platform::PixelPoint delta;
+        std::int32_t available;
+    };
+    const std::array directions{
+        Direction{{1, 0}, bounds.right - 1 - start.x},
+        Direction{{-1, 0}, start.x - bounds.left},
+        Direction{{0, 1}, bounds.bottom - 1 - start.y},
+        Direction{{0, -1}, start.y - bounds.top},
+    };
+    const auto best = std::max_element(
+        directions.begin(), directions.end(),
+        [](const Direction& left, const Direction& right) {
+            return left.available < right.available;
+        });
+    constexpr std::int32_t kDefaultLength = 96;
+    const std::int32_t length = std::clamp(best->available, 0, kDefaultLength);
+    return {
+        start.x + (best->delta.x * length),
+        start.y + (best->delta.y * length),
+    };
+}
 
 DocumentModel::DocumentModel(capture::PixelBuffer source)
 {

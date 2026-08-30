@@ -30,9 +30,7 @@ constexpr int kSelectButton = 3101;
 constexpr int kRectangleButton = 3102;
 constexpr int kLineButton = 3103;
 constexpr int kEllipseButton = 3104;
-constexpr int kStarButton = 3105;
 constexpr int kArrowButton = 3106;
-constexpr int kCurvedArrowButton = 3107;
 constexpr int kMarkerButton = 3108;
 constexpr int kTextButton = 3109;
 constexpr int kBlurButton = 3110;
@@ -179,18 +177,10 @@ void EditorWindow::CreateControls() {
         0, L"BUTTON", L"Эллипс", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         0, 0, 0, 0, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEllipseButton)),
         instance_, nullptr);
-    star_button_ = ::CreateWindowExW(
-        0, L"BUTTON", L"Звезда", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        0, 0, 0, 0, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kStarButton)),
-        instance_, nullptr);
     arrow_button_ = ::CreateWindowExW(
         0, L"BUTTON", L"Стрелка", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         0, 0, 0, 0, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kArrowButton)),
         instance_, nullptr);
-    curved_arrow_button_ = ::CreateWindowExW(
-        0, L"BUTTON", L"Дуга", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        0, 0, 0, 0, window_,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCurvedArrowButton)), instance_, nullptr);
     marker_button_ = ::CreateWindowExW(
         0, L"BUTTON", L"Маркер", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         0, 0, 0, 0, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kMarkerButton)),
@@ -272,9 +262,7 @@ void EditorWindow::LayoutControls() {
     place_tool(rectangle_button_, 126);
     place_tool(line_button_, 72);
     place_tool(ellipse_button_, 78);
-    place_tool(star_button_, 82);
     place_tool(arrow_button_, 86);
-    place_tool(curved_arrow_button_, 66);
     place_tool(marker_button_, 82);
     place_tool(text_button_, 72);
     place_tool(blur_button_, 84);
@@ -486,7 +474,7 @@ platform::PixelRect EditorWindow::VisibleDocumentBounds() const noexcept {
 void EditorWindow::ShowCropActions(const bool visible) const {
     ::ShowWindow(apply_crop_button_, visible ? SW_SHOW : SW_HIDE);
     ::ShowWindow(cancel_crop_button_, visible ? SW_SHOW : SW_HIDE);
-    ::EnableWindow(copy_button_, visible ? FALSE : TRUE);
+    ::EnableWindow(copy_button_, TRUE);
     ::EnableWindow(save_button_, visible ? FALSE : TRUE);
     ::EnableWindow(share_button_, visible ? FALSE : TRUE);
 }
@@ -726,14 +714,8 @@ void EditorWindow::BeginDocumentAction(const POINT client_point) {
     case Tool::ellipse:
         kind = AnnotationKind::ellipse;
         break;
-    case Tool::star:
-        kind = AnnotationKind::star;
-        break;
     case Tool::arrow:
         kind = AnnotationKind::arrow;
-        break;
-    case Tool::curved_arrow:
-        kind = AnnotationKind::curved_arrow;
         break;
     case Tool::marker:
         kind = AnnotationKind::marker;
@@ -760,8 +742,6 @@ void EditorWindow::BeginDocumentAction(const POINT client_point) {
     if (kind == AnnotationKind::marker) {
         annotation.color = 0x66FFEB3B;
         annotation.thickness = 18;
-        annotation.points.push_back(last_document_point_);
-    } else if (kind == AnnotationKind::curved_arrow) {
         annotation.points.push_back(last_document_point_);
     }
     active_annotation_ = session_.model.Add(annotation);
@@ -801,12 +781,6 @@ void EditorWindow::UpdateDocumentAction(const POINT client_point) {
         if (annotation->kind == AnnotationKind::marker &&
             (annotation->points.empty() || annotation->points.back() != current)) {
             annotation->points.push_back(current);
-        } else if (annotation->kind == AnnotationKind::curved_arrow &&
-            !annotation->points.empty()) {
-            annotation->points.front() = {
-                (annotation->start.x + current.x) / 2,
-                ((annotation->start.y + current.y) / 2) - 40,
-            };
         }
     }
     last_document_point_ = current;
@@ -818,6 +792,15 @@ void EditorWindow::EndDocumentAction(const POINT client_point) {
         return;
     }
     UpdateDocumentAction(client_point);
+    if (creating_) {
+        if (Annotation* annotation = session_.model.Find(active_annotation_);
+            annotation != nullptr && annotation->kind == AnnotationKind::arrow &&
+            std::abs(annotation->end.x - annotation->start.x) <= 8 &&
+            std::abs(annotation->end.y - annotation->start.y) <= 8) {
+            annotation->end = DefaultArrowEnd(
+                annotation->start, VisibleDocumentBounds());
+        }
+    }
     ::ReleaseCapture();
     dragging_ = false;
     creating_ = false;
@@ -1036,24 +1019,14 @@ LRESULT EditorWindow::HandleMessage(
             choose_tool(Tool::line);
         } else if (LOWORD(w_param) == kEllipseButton) {
             choose_tool(Tool::ellipse);
-        } else if (LOWORD(w_param) == kStarButton) {
-            choose_tool(Tool::star);
         } else if (LOWORD(w_param) == kArrowButton) {
             choose_tool(Tool::arrow);
-        } else if (LOWORD(w_param) == kCurvedArrowButton) {
-            choose_tool(Tool::curved_arrow);
         } else if (LOWORD(w_param) == kMarkerButton) {
             choose_tool(Tool::marker);
         } else if (LOWORD(w_param) == kTextButton) {
             choose_tool(Tool::text);
         } else if (LOWORD(w_param) == kBlurButton) {
             choose_tool(Tool::blur);
-            if (!blur_warning_shown_) {
-                blur_warning_shown_ = true;
-                ::MessageBoxW(window_,
-                    L"Размытие не гарантирует необратимое сокрытие данных.",
-                    L"Screenshooter", MB_OK | MB_ICONINFORMATION);
-            }
         } else if (LOWORD(w_param) == kCropButton) {
             EnterCropMode();
         } else if (LOWORD(w_param) == kApplyCropButton) {

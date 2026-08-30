@@ -418,14 +418,13 @@ Exit criteria:
 
 Порядок реализации снижает зависимость между сложными инструментами:
 
-1. ellipse и star на общей shape infrastructure;
-2. straight filled/outlined arrow;
-3. curved dashed arrow с control point;
-4. marker stroke со сглаживанием и alpha compositing;
-5. text object, native edit overlay, DirectWrite wrapping и три preset styles;
-6. image paste из bitmap, file drop и scale handles;
-7. object copy/cut/paste и выбор clipboard behavior по текущему контексту;
-8. tool/context toolbar, palette, thickness и режим единичного/серийного создания.
+1. ellipse на общей shape infrastructure;
+2. straight arrow; короткий клик создаёт стрелку с заметным хвостом;
+3. marker stroke со сглаживанием и alpha compositing;
+4. text object, native edit overlay, DirectWrite wrapping и три preset styles;
+5. image paste из bitmap, file drop и scale handles;
+6. object copy/cut/paste и выбор clipboard behavior по текущему контексту;
+7. tool/context toolbar, palette, thickness и режим единичного/серийного создания.
 
 Exit criteria:
 
@@ -443,7 +442,7 @@ Exit criteria:
 2. Добавить Gaussian Blur preview и export с одинаковыми параметрами.
 3. Реализовать crop draft, handles, dimming, Enter/Esc и `SetCropCommand`.
 4. Проверить clip частично видимых annotations и сохранение объектов вне crop.
-5. Добавить предупреждение о том, что blur не гарантирует необратимое сокрытие.
+5. Разрешить `Копировать` для активного crop draft: экспортировать выбранную зону и закрывать только текущее окно.
 
 Exit criteria:
 

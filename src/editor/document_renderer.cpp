@@ -148,44 +148,6 @@ void DrawAnnotation(capture::PixelBuffer& image, const Annotation& annotation) {
         }
         return;
     }
-    if (annotation.kind == AnnotationKind::curved_arrow && !annotation.points.empty()) {
-        platform::PixelPoint previous = annotation.start;
-        for (int step = 1; step <= 48; ++step) {
-            const double t = step / 48.0;
-            const double inverse = 1.0 - t;
-            const platform::PixelPoint current{
-                static_cast<std::int32_t>(std::lround(
-                    (inverse * inverse * annotation.start.x) +
-                    (2.0 * inverse * t * annotation.points.front().x) +
-                    (t * t * annotation.end.x))),
-                static_cast<std::int32_t>(std::lround(
-                    (inverse * inverse * annotation.start.y) +
-                    (2.0 * inverse * t * annotation.points.front().y) +
-                    (t * t * annotation.end.y))),
-            };
-            if ((step / 4) % 2 == 0) {
-                DrawLine(image, previous, current,
-                    annotation.thickness, annotation.color);
-            }
-            previous = current;
-        }
-        const double angle = std::atan2(
-            annotation.end.y - annotation.points.front().y,
-            annotation.end.x - annotation.points.front().x
-        );
-        constexpr double kSpread = 0.55;
-        const double length = std::max(14.0, annotation.thickness * 4.0);
-        for (const double direction : {angle + std::numbers::pi - kSpread,
-                                      angle + std::numbers::pi + kSpread}) {
-            const platform::PixelPoint head{
-                annotation.end.x + static_cast<std::int32_t>(std::lround(std::cos(direction) * length)),
-                annotation.end.y + static_cast<std::int32_t>(std::lround(std::sin(direction) * length)),
-            };
-            DrawLine(image, annotation.end, head,
-                annotation.thickness, annotation.color);
-        }
-        return;
-    }
     if (annotation.kind == AnnotationKind::marker) {
         for (std::size_t index = 1; index < annotation.points.size(); ++index) {
             DrawLine(image, annotation.points[index - 1], annotation.points[index],
@@ -287,31 +249,6 @@ void DrawAnnotation(capture::PixelBuffer& image, const Annotation& annotation) {
             DrawLine(image, previous, current, annotation.thickness, annotation.color);
             previous = current;
         }
-        return;
-    }
-    if (annotation.kind == AnnotationKind::star) {
-        const double center_x = (bounds.left + bounds.right) / 2.0;
-        const double center_y = (bounds.top + bounds.bottom) / 2.0;
-        const double outer = std::min(bounds.width(), bounds.height()) / 2.0;
-        const double inner = outer * 0.45;
-        platform::PixelPoint first{};
-        platform::PixelPoint previous{};
-        for (int index = 0; index < 10; ++index) {
-            const double angle = (-std::numbers::pi / 2.0) +
-                (index * std::numbers::pi / 5.0);
-            const double radius = index % 2 == 0 ? outer : inner;
-            const platform::PixelPoint current{
-                static_cast<std::int32_t>(std::lround(center_x + std::cos(angle) * radius)),
-                static_cast<std::int32_t>(std::lround(center_y + std::sin(angle) * radius)),
-            };
-            if (index == 0) {
-                first = current;
-            } else {
-                DrawLine(image, previous, current, annotation.thickness, annotation.color);
-            }
-            previous = current;
-        }
-        DrawLine(image, previous, first, annotation.thickness, annotation.color);
         return;
     }
     DrawLine(image, {bounds.left, bounds.top}, {bounds.right, bounds.top},

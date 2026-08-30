@@ -29,8 +29,7 @@ public:
 
 private:
     enum class Tool {
-        select, rectangle, line, ellipse, star, arrow, curved_arrow, marker, text,
-        blur, crop
+        select, rectangle, line, ellipse, arrow, marker, text, blur, crop
     };
 
     EditorWindow(HINSTANCE instance, HWND host, DocumentSession session);
@@ -81,9 +80,7 @@ private:
     HWND rectangle_button_{};
     HWND line_button_{};
     HWND ellipse_button_{};
-    HWND star_button_{};
     HWND arrow_button_{};
-    HWND curved_arrow_button_{};
     HWND marker_button_{};
     HWND text_button_{};
     HWND blur_button_{};
@@ -107,7 +104,6 @@ private:
     bool dragging_{};
     bool resizing_{};
     bool crop_drafting_{};
-    bool blur_warning_shown_{};
     bool creating_{};
     bool closing_after_export_{};
     platform::PixelPoint last_document_point_{};

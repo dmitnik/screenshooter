@@ -9,6 +9,7 @@ using screenshooter::editor::AnnotationKind;
 using screenshooter::editor::CommandHistory;
 using screenshooter::editor::DocumentModel;
 using screenshooter::editor::DocumentRenderer;
+using screenshooter::editor::DefaultArrowEnd;
 using screenshooter::platform::PixelPoint;
 using screenshooter::platform::PixelRect;
 
@@ -102,7 +103,7 @@ TEST_CASE("Marker is one movable hit-testable object") {
     REQUIRE(model.Find(id)->points.front() == PixelPoint{15, 27});
 }
 
-TEST_CASE("Extended shape renderer draws arrow ellipse and star") {
+TEST_CASE("Shape renderer draws a visible arrow and ellipse") {
     DocumentModel model(CreateOpaqueBuffer(120, 120));
     static_cast<void>(model.Add(Annotation{
         .kind = AnnotationKind::arrow,
@@ -114,13 +115,15 @@ TEST_CASE("Extended shape renderer draws arrow ellipse and star") {
         .start = {20, 30},
         .end = {90, 80},
     }));
-    static_cast<void>(model.Add(Annotation{
-        .kind = AnnotationKind::star,
-        .start = {30, 30},
-        .end = {100, 100},
-    }));
     const auto rendered = DocumentRenderer::Render(model);
     REQUIRE(rendered != model.source());
+    REQUIRE(std::to_integer<unsigned>(rendered.row(10)[40 * 4 + 2]) > 0U);
+}
+
+TEST_CASE("Default click arrow uses the longest available direction") {
+    const PixelRect bounds{0, 0, 200, 100};
+    REQUIRE(DefaultArrowEnd({50, 50}, bounds) == PixelPoint{146, 50});
+    REQUIRE(DefaultArrowEnd({190, 50}, bounds) == PixelPoint{94, 50});
 }
 
 TEST_CASE("Pixelation consumes lower raster while later annotations stay sharp") {

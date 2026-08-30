@@ -17,14 +17,17 @@ enum class AnnotationKind {
     rectangle,
     line,
     ellipse,
-    star,
     arrow,
-    curved_arrow,
     marker,
     text,
     image,
     blur,
 };
+
+[[nodiscard]] platform::PixelPoint DefaultArrowEnd(
+    platform::PixelPoint start,
+    platform::PixelRect bounds
+) noexcept;
 
 struct Annotation {
     AnnotationId id{};
