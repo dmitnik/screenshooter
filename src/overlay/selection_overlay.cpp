@@ -5,6 +5,7 @@
 #include <windowsx.h>
 
 #include <algorithm>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <utility>
@@ -63,6 +64,7 @@ SelectionOverlay::~SelectionOverlay() {
     if (window_ != nullptr) {
         ::DestroyWindow(window_);
     }
+    ReleaseSourceBuffer();
     ReleasePaintBuffer();
 }
 
@@ -93,6 +95,67 @@ bool SelectionOverlay::CreateNativeWindow() {
     ::SetFocus(window_);
     ::UpdateWindow(window_);
     return true;
+}
+
+bool SelectionOverlay::EnsureSourceBuffer(const HDC reference) {
+    if (source_buffer_dc_ != nullptr && source_buffer_bitmap_ != nullptr) {
+        return true;
+    }
+
+    const auto& image = frame_.pixels;
+    if (image.empty()) {
+        return false;
+    }
+
+    BITMAPINFO bitmap_info{};
+    bitmap_info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bitmap_info.bmiHeader.biWidth = image.width;
+    bitmap_info.bmiHeader.biHeight = -image.height;
+    bitmap_info.bmiHeader.biPlanes = 1;
+    bitmap_info.bmiHeader.biBitCount = 32;
+    bitmap_info.bmiHeader.biCompression = BI_RGB;
+
+    void* bits = nullptr;
+    source_buffer_dc_ = ::CreateCompatibleDC(reference);
+    source_buffer_bitmap_ = ::CreateDIBSection(
+        reference, &bitmap_info, DIB_RGB_COLORS, &bits, nullptr, 0);
+    if (source_buffer_dc_ == nullptr || source_buffer_bitmap_ == nullptr ||
+        bits == nullptr) {
+        ReleaseSourceBuffer();
+        return false;
+    }
+
+    source_buffer_previous_ = ::SelectObject(source_buffer_dc_, source_buffer_bitmap_);
+    if (source_buffer_previous_ == nullptr || source_buffer_previous_ == HGDI_ERROR) {
+        ReleaseSourceBuffer();
+        return false;
+    }
+
+    constexpr std::size_t kBytesPerPixel = 4;
+    const auto destination_stride = static_cast<std::size_t>(image.width) *
+        kBytesPerPixel;
+    auto* destination = static_cast<std::byte*>(bits);
+    for (std::int32_t y = 0; y < image.height; ++y) {
+        std::memcpy(destination + (static_cast<std::size_t>(y) * destination_stride),
+            image.row(y), destination_stride);
+    }
+    return true;
+}
+
+void SelectionOverlay::ReleaseSourceBuffer() noexcept {
+    if (source_buffer_dc_ != nullptr && source_buffer_previous_ != nullptr &&
+        source_buffer_previous_ != HGDI_ERROR) {
+        ::SelectObject(source_buffer_dc_, source_buffer_previous_);
+    }
+    if (source_buffer_bitmap_ != nullptr) {
+        ::DeleteObject(source_buffer_bitmap_);
+    }
+    if (source_buffer_dc_ != nullptr) {
+        ::DeleteDC(source_buffer_dc_);
+    }
+    source_buffer_dc_ = nullptr;
+    source_buffer_bitmap_ = nullptr;
+    source_buffer_previous_ = nullptr;
 }
 
 bool SelectionOverlay::EnsurePaintBuffer(
@@ -222,6 +285,7 @@ void SelectionOverlay::Paint() {
     const bool buffered = EnsurePaintBuffer(paint_dc, client.right, client.bottom);
     HDC dc = buffered ? paint_buffer_dc_ : paint_dc;
     const auto& image = frame_.pixels;
+    const bool source_buffered = EnsureSourceBuffer(paint_dc);
     BITMAPINFO bitmap_info{};
     bitmap_info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
     bitmap_info.bmiHeader.biWidth = image.width;
@@ -229,10 +293,15 @@ void SelectionOverlay::Paint() {
     bitmap_info.bmiHeader.biPlanes = 1;
     bitmap_info.bmiHeader.biBitCount = 32;
     bitmap_info.bmiHeader.biCompression = BI_RGB;
-    ::SetDIBitsToDevice(
-        dc, 0, 0, image.width, image.height, 0, 0, 0, image.height,
-        image.pixels.data(), &bitmap_info, DIB_RGB_COLORS
-    );
+    if (source_buffered) {
+        ::BitBlt(dc, 0, 0, image.width, image.height,
+            source_buffer_dc_, 0, 0, SRCCOPY);
+    } else {
+        ::SetDIBitsToDevice(
+            dc, 0, 0, image.width, image.height, 0, 0, 0, image.height,
+            image.pixels.data(), &bitmap_info, DIB_RGB_COLORS
+        );
+    }
 
     HDC dim_dc = ::CreateCompatibleDC(dc);
     HBITMAP dim_bitmap = ::CreateCompatibleBitmap(dc, 1, 1);
@@ -248,21 +317,29 @@ void SelectionOverlay::Paint() {
         const auto selection = Selection();
         if (!selection.empty()) {
             const RECT selected = ToClientRect(selection, frame_.virtual_bounds);
-            ::StretchDIBits(
-                dc,
-                selected.left,
-                selected.top,
-                selection.width(),
-                selection.height(),
+            const platform::PixelRect source_rect{
                 selection.left - frame_.virtual_bounds.left,
                 selection.top - frame_.virtual_bounds.top,
-                selection.width(),
-                selection.height(),
-                image.pixels.data(),
-                &bitmap_info,
-                DIB_RGB_COLORS,
-                SRCCOPY
-            );
+                selection.right - frame_.virtual_bounds.left,
+                selection.bottom - frame_.virtual_bounds.top,
+            };
+            if (source_buffered) {
+                ::BitBlt(dc, selected.left, selected.top,
+                    selection.width(), selection.height(), source_buffer_dc_,
+                    source_rect.left, source_rect.top, SRCCOPY);
+            } else {
+                const auto preview = capture::Crop(image, source_rect);
+                BITMAPINFO preview_info{};
+                preview_info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+                preview_info.bmiHeader.biWidth = preview.width;
+                preview_info.bmiHeader.biHeight = -preview.height;
+                preview_info.bmiHeader.biPlanes = 1;
+                preview_info.bmiHeader.biBitCount = 32;
+                preview_info.bmiHeader.biCompression = BI_RGB;
+                ::SetDIBitsToDevice(dc, selected.left, selected.top,
+                    preview.width, preview.height, 0, 0, 0, preview.height,
+                    preview.pixels.data(), &preview_info, DIB_RGB_COLORS);
+            }
             HPEN pen = ::CreatePen(PS_SOLID, 2, RGB(26, 115, 232));
             HGDIOBJ old_pen = ::SelectObject(dc, pen);
             HGDIOBJ old_brush = ::SelectObject(dc, ::GetStockObject(HOLLOW_BRUSH));

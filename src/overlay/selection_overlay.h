@@ -26,6 +26,8 @@ private:
     SelectionOverlay(HINSTANCE instance, HWND host, capture::CaptureFrame frame);
 
     [[nodiscard]] bool CreateNativeWindow();
+    [[nodiscard]] bool EnsureSourceBuffer(HDC reference);
+    void ReleaseSourceBuffer() noexcept;
     [[nodiscard]] bool EnsurePaintBuffer(HDC reference, int width, int height);
     void ReleasePaintBuffer() noexcept;
     void RepaintImmediately() const;
@@ -37,6 +39,9 @@ private:
     HINSTANCE instance_{};
     HWND host_{};
     HWND window_{};
+    HDC source_buffer_dc_{};
+    HBITMAP source_buffer_bitmap_{};
+    HGDIOBJ source_buffer_previous_{};
     HDC paint_buffer_dc_{};
     HBITMAP paint_buffer_bitmap_{};
     HGDIOBJ paint_buffer_previous_{};
