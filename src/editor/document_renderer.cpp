@@ -77,42 +77,42 @@ void DrawLine(
     }
 }
 
-void ApplyGaussianBlur(capture::PixelBuffer& image, platform::PixelRect area) {
+void ApplyPixelation(capture::PixelBuffer& image, platform::PixelRect area) {
     area = platform::Intersect(area, {0, 0, image.width, image.height});
     if (area.empty()) {
         return;
     }
-    constexpr int kRadius = 3;
-    constexpr int kWeights[(kRadius * 2) + 1]{1, 6, 15, 20, 15, 6, 1};
-    constexpr int kWeightSum = 64;
-    capture::PixelBuffer horizontal = image;
-    for (std::int32_t y = area.top; y < area.bottom; ++y) {
-        for (std::int32_t x = area.left; x < area.right; ++x) {
-            for (std::size_t channel = 0; channel < 3; ++channel) {
-                int sum = 0;
-                for (int offset = -kRadius; offset <= kRadius; ++offset) {
-                    const auto sample_x = std::clamp(x + offset, area.left, area.right - 1);
-                    sum += std::to_integer<int>(
-                        image.row(y)[(sample_x * 4) + channel]
-                    ) * kWeights[offset + kRadius];
+    constexpr std::int32_t kBlockSize = 16;
+    for (std::int32_t block_y = area.top; block_y < area.bottom;
+         block_y += kBlockSize) {
+        const auto block_bottom = std::min(block_y + kBlockSize, area.bottom);
+        for (std::int32_t block_x = area.left; block_x < area.right;
+             block_x += kBlockSize) {
+            const auto block_right = std::min(block_x + kBlockSize, area.right);
+            std::uint64_t sums[3]{};
+            std::uint64_t pixel_count = 0;
+            for (std::int32_t y = block_y; y < block_bottom; ++y) {
+                for (std::int32_t x = block_x; x < block_right; ++x) {
+                    const auto* pixel = image.row(y) +
+                        (static_cast<std::size_t>(x) * 4U);
+                    for (std::size_t channel = 0; channel < 3; ++channel) {
+                        sums[channel] += std::to_integer<unsigned>(pixel[channel]);
+                    }
+                    ++pixel_count;
                 }
-                horizontal.row(y)[(x * 4) + channel] =
-                    static_cast<std::byte>(sum / kWeightSum);
             }
-        }
-    }
-    for (std::int32_t y = area.top; y < area.bottom; ++y) {
-        for (std::int32_t x = area.left; x < area.right; ++x) {
+            std::byte average[3]{};
             for (std::size_t channel = 0; channel < 3; ++channel) {
-                int sum = 0;
-                for (int offset = -kRadius; offset <= kRadius; ++offset) {
-                    const auto sample_y = std::clamp(y + offset, area.top, area.bottom - 1);
-                    sum += std::to_integer<int>(
-                        horizontal.row(sample_y)[(x * 4) + channel]
-                    ) * kWeights[offset + kRadius];
+                average[channel] = static_cast<std::byte>(sums[channel] / pixel_count);
+            }
+            for (std::int32_t y = block_y; y < block_bottom; ++y) {
+                for (std::int32_t x = block_x; x < block_right; ++x) {
+                    auto* pixel = image.row(y) + (static_cast<std::size_t>(x) * 4U);
+                    pixel[0] = average[0];
+                    pixel[1] = average[1];
+                    pixel[2] = average[2];
+                    pixel[3] = std::byte{0xFF};
                 }
-                image.row(y)[(x * 4) + channel] =
-                    static_cast<std::byte>(sum / kWeightSum);
             }
         }
     }
@@ -120,7 +120,7 @@ void ApplyGaussianBlur(capture::PixelBuffer& image, platform::PixelRect area) {
 
 void DrawAnnotation(capture::PixelBuffer& image, const Annotation& annotation) {
     if (annotation.kind == AnnotationKind::blur) {
-        ApplyGaussianBlur(image, platform::Normalize(annotation.start, annotation.end));
+        ApplyPixelation(image, platform::Normalize(annotation.start, annotation.end));
         return;
     }
     if (annotation.kind == AnnotationKind::line) {

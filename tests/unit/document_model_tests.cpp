@@ -122,7 +122,7 @@ TEST_CASE("Extended shape renderer draws arrow ellipse and star") {
     REQUIRE(rendered != model.source());
 }
 
-TEST_CASE("Blur consumes lower raster while later annotations stay sharp") {
+TEST_CASE("Pixelation consumes lower raster while later annotations stay sharp") {
     auto source = CreateOpaqueBuffer(40, 20);
     for (int y = 0; y < source.height; ++y) {
         for (int x = 20; x < source.width; ++x) {
@@ -147,6 +147,27 @@ TEST_CASE("Blur consumes lower raster while later annotations stay sharp") {
     const auto rendered = DocumentRenderer::Render(model);
     REQUIRE(std::to_integer<unsigned>(rendered.row(5)[19 * 4]) > 0U);
     REQUIRE(std::to_integer<unsigned>(rendered.row(10)[20 * 4 + 2]) == 0xFFU);
+}
+
+TEST_CASE("Pixelation fills each mosaic block with one averaged color") {
+    auto source = CreateOpaqueBuffer(32, 16);
+    for (int y = 0; y < source.height; ++y) {
+        for (int x = 0; x < source.width; ++x) {
+            source.row(y)[x * 4] = static_cast<std::byte>(x * 4);
+        }
+    }
+    DocumentModel model(std::move(source));
+    static_cast<void>(model.Add(Annotation{
+        .kind = AnnotationKind::blur,
+        .start = {0, 0},
+        .end = {32, 16},
+    }));
+
+    const auto rendered = DocumentRenderer::Render(model);
+    REQUIRE(std::to_integer<unsigned>(rendered.row(0)[0]) ==
+        std::to_integer<unsigned>(rendered.row(15)[15 * 4]));
+    REQUIRE(std::to_integer<unsigned>(rendered.row(0)[0]) !=
+        std::to_integer<unsigned>(rendered.row(0)[16 * 4]));
 }
 
 TEST_CASE("Crop is non-destructive and controls exported dimensions") {

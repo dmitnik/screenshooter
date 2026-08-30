@@ -37,6 +37,8 @@ constexpr int kMarkerButton = 3108;
 constexpr int kTextButton = 3109;
 constexpr int kBlurButton = 3110;
 constexpr int kCropButton = 3111;
+constexpr int kApplyCropButton = 3112;
+constexpr int kCancelCropButton = 3113;
 constexpr int kBarHeightDip = 54;
 constexpr int kToolbarHeightDip = 48;
 constexpr UINT kCommitTextEdit = WM_APP + 20;
@@ -56,6 +58,49 @@ bool RegisterEditorClass(const HINSTANCE instance) {
     };
     return ::RegisterClassExW(&window_class) != 0 ||
         ::GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
+}
+
+void FillTranslucentRegions(
+    const HDC target,
+    const RECT* regions,
+    const std::size_t count
+) {
+    BITMAPINFO info{};
+    info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth = 1;
+    info.bmiHeader.biHeight = -1;
+    info.bmiHeader.biPlanes = 1;
+    info.bmiHeader.biBitCount = 32;
+    info.bmiHeader.biCompression = BI_RGB;
+    void* bits = nullptr;
+    HDC source = ::CreateCompatibleDC(target);
+    HBITMAP bitmap = ::CreateDIBSection(target, &info, DIB_RGB_COLORS, &bits, nullptr, 0);
+    if (source == nullptr || bitmap == nullptr || bits == nullptr) {
+        if (bitmap != nullptr) ::DeleteObject(bitmap);
+        if (source != nullptr) ::DeleteDC(source);
+        return;
+    }
+    constexpr BYTE kAlpha = 58;
+    constexpr BYTE kGray = 88;
+    constexpr BYTE kPremultiplied = static_cast<BYTE>((kGray * kAlpha) / 255);
+    *static_cast<std::uint32_t*>(bits) =
+        (static_cast<std::uint32_t>(kAlpha) << 24U) |
+        (static_cast<std::uint32_t>(kPremultiplied) << 16U) |
+        (static_cast<std::uint32_t>(kPremultiplied) << 8U) |
+        kPremultiplied;
+    HGDIOBJ previous = ::SelectObject(source, bitmap);
+    const BLENDFUNCTION blend{AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+    for (std::size_t index = 0; index < count; ++index) {
+        const RECT& area = regions[index];
+        if (area.right > area.left && area.bottom > area.top) {
+            ::AlphaBlend(target, area.left, area.top,
+                area.right - area.left, area.bottom - area.top,
+                source, 0, 0, 1, 1, blend);
+        }
+    }
+    ::SelectObject(source, previous);
+    ::DeleteObject(bitmap);
+    ::DeleteDC(source);
 }
 
 }  // namespace
@@ -81,6 +126,7 @@ EditorWindow::~EditorWindow() {
     if (window_ != nullptr) {
         ::DestroyWindow(window_);
     }
+    ReleasePaintBuffer();
 }
 
 bool EditorWindow::CreateNativeWindow() {
@@ -95,7 +141,7 @@ bool EditorWindow::CreateNativeWindow() {
         0,
         kWindowClass,
         title.c_str(),
-        WS_OVERLAPPEDWINDOW,
+        WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
         CW_USEDEFAULT,
         CW_USEDEFAULT,
         width,
@@ -161,6 +207,14 @@ void EditorWindow::CreateControls() {
         0, L"BUTTON", L"Обрезать", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         0, 0, 0, 0, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCropButton)),
         instance_, nullptr);
+    apply_crop_button_ = ::CreateWindowExW(
+        0, L"BUTTON", L"Применить", WS_CHILD | BS_DEFPUSHBUTTON,
+        0, 0, 0, 0, window_,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kApplyCropButton)), instance_, nullptr);
+    cancel_crop_button_ = ::CreateWindowExW(
+        0, L"BUTTON", L"Отмена", WS_CHILD | BS_PUSHBUTTON,
+        0, 0, 0, 0, window_,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCancelCropButton)), instance_, nullptr);
     copy_button_ = ::CreateWindowExW(
         0, L"BUTTON", L"Копировать", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         0, 0, 0, 0, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCopyButton)),
@@ -198,6 +252,14 @@ void EditorWindow::LayoutControls() {
     left -= width + gap;
     ::MoveWindow(copy_button_, left, top, width, height, TRUE);
 
+    const int crop_action_width = platform::DipToPixels(108, dpi);
+    int crop_action_left = gap;
+    ::MoveWindow(apply_crop_button_, crop_action_left, top,
+        crop_action_width, height, TRUE);
+    crop_action_left += crop_action_width + gap;
+    ::MoveWindow(cancel_crop_button_, crop_action_left, top,
+        crop_action_width, height, TRUE);
+
     const int tool_height = platform::DipToPixels(32, dpi);
     const int tool_top = (toolbar - tool_height) / 2;
     int tool_left = gap;
@@ -219,30 +281,60 @@ void EditorWindow::LayoutControls() {
     place_tool(crop_button_, 92);
 }
 
+bool EditorWindow::EnsurePaintBuffer(
+    const HDC reference,
+    const int width,
+    const int height
+) {
+    if (paint_buffer_dc_ != nullptr && paint_buffer_bitmap_ != nullptr &&
+        paint_buffer_size_.cx == width && paint_buffer_size_.cy == height) {
+        return true;
+    }
+    ReleasePaintBuffer();
+    paint_buffer_dc_ = ::CreateCompatibleDC(reference);
+    paint_buffer_bitmap_ = ::CreateCompatibleBitmap(
+        reference, std::max(1, width), std::max(1, height));
+    if (paint_buffer_dc_ == nullptr || paint_buffer_bitmap_ == nullptr) {
+        ReleasePaintBuffer();
+        return false;
+    }
+    paint_buffer_previous_ = ::SelectObject(paint_buffer_dc_, paint_buffer_bitmap_);
+    if (paint_buffer_previous_ == nullptr || paint_buffer_previous_ == HGDI_ERROR) {
+        ReleasePaintBuffer();
+        return false;
+    }
+    paint_buffer_size_ = {width, height};
+    return true;
+}
+
+void EditorWindow::ReleasePaintBuffer() noexcept {
+    if (paint_buffer_dc_ != nullptr && paint_buffer_previous_ != nullptr &&
+        paint_buffer_previous_ != HGDI_ERROR) {
+        ::SelectObject(paint_buffer_dc_, paint_buffer_previous_);
+    }
+    if (paint_buffer_bitmap_ != nullptr) {
+        ::DeleteObject(paint_buffer_bitmap_);
+    }
+    if (paint_buffer_dc_ != nullptr) {
+        ::DeleteDC(paint_buffer_dc_);
+    }
+    paint_buffer_dc_ = nullptr;
+    paint_buffer_bitmap_ = nullptr;
+    paint_buffer_previous_ = nullptr;
+    paint_buffer_size_ = {};
+}
+
 void EditorWindow::Paint() {
     PAINTSTRUCT paint{};
     HDC paint_dc = ::BeginPaint(window_, &paint);
     RECT client{};
     ::GetClientRect(window_, &client);
-    HDC buffer_dc = ::CreateCompatibleDC(paint_dc);
-    HBITMAP buffer_bitmap = ::CreateCompatibleBitmap(
-        paint_dc, std::max(1L, client.right), std::max(1L, client.bottom));
-    HGDIOBJ previous_bitmap = nullptr;
-    const bool buffered = buffer_dc != nullptr && buffer_bitmap != nullptr;
-    if (buffered) {
-        previous_bitmap = ::SelectObject(buffer_dc, buffer_bitmap);
-    }
-    HDC dc = buffered ? buffer_dc : paint_dc;
+    const bool buffered = EnsurePaintBuffer(paint_dc, client.right, client.bottom);
+    HDC dc = buffered ? paint_buffer_dc_ : paint_dc;
     const auto finish_paint = [&] {
         if (buffered) {
-            ::BitBlt(paint_dc, 0, 0, client.right, client.bottom, buffer_dc, 0, 0, SRCCOPY);
-            ::SelectObject(buffer_dc, previous_bitmap);
-        }
-        if (buffer_bitmap != nullptr) {
-            ::DeleteObject(buffer_bitmap);
-        }
-        if (buffer_dc != nullptr) {
-            ::DeleteDC(buffer_dc);
+            ::BitBlt(paint_dc, 0, 0, client.right, client.bottom,
+                paint_buffer_dc_, 0, 0, SRCCOPY);
         }
         ::EndPaint(window_, &paint);
     };
@@ -264,7 +356,7 @@ void EditorWindow::Paint() {
     ::FillRect(dc, &toolbar_rect, toolbar_brush);
     ::DeleteObject(toolbar_brush);
 
-    const auto rendered = DocumentRenderer::Render(session_.model, false);
+    const auto rendered = DocumentRenderer::Render(session_.model, crop_applied_);
     if (rendered.empty()) {
         finish_paint();
         return;
@@ -310,15 +402,20 @@ void EditorWindow::Paint() {
         DIB_RGB_COLORS,
         SRCCOPY
     );
+    const auto visible_bounds = VisibleDocumentBounds();
     if (session_.model.state().selected.has_value()) {
         const Annotation* selected = session_.model.Find(*session_.model.state().selected);
         if (selected != nullptr) {
             const auto bounds = platform::Normalize(selected->start, selected->end);
             RECT selection{
-                static_cast<LONG>(std::lround(offset_x_ + (bounds.left * scale_))),
-                static_cast<LONG>(std::lround(offset_y_ + (bounds.top * scale_))),
-                static_cast<LONG>(std::lround(offset_x_ + (bounds.right * scale_))),
-                static_cast<LONG>(std::lround(offset_y_ + (bounds.bottom * scale_))),
+                static_cast<LONG>(std::lround(
+                    offset_x_ + ((bounds.left - visible_bounds.left) * scale_))),
+                static_cast<LONG>(std::lround(
+                    offset_y_ + ((bounds.top - visible_bounds.top) * scale_))),
+                static_cast<LONG>(std::lround(
+                    offset_x_ + ((bounds.right - visible_bounds.left) * scale_))),
+                static_cast<LONG>(std::lround(
+                    offset_y_ + ((bounds.bottom - visible_bounds.top) * scale_))),
             };
             HPEN pen = ::CreatePen(PS_DOT, 1, RGB(26, 115, 232));
             HGDIOBJ old_pen = ::SelectObject(dc, pen);
@@ -333,7 +430,7 @@ void EditorWindow::Paint() {
     const platform::PixelRect full{
         0, 0, session_.model.source().width, session_.model.source().height
     };
-    if (session_.model.state().crop != full) {
+    if (!crop_applied_ && session_.model.state().crop != full) {
         const auto crop = session_.model.state().crop;
         RECT crop_rect{
             static_cast<LONG>(std::lround(offset_x_ + (crop.left * scale_))),
@@ -347,19 +444,13 @@ void EditorWindow::Paint() {
             static_cast<LONG>(std::lround(offset_x_ + (rendered.width * scale_))),
             static_cast<LONG>(std::lround(offset_y_ + (rendered.height * scale_))),
         };
-        HBRUSH mask = ::CreateSolidBrush(RGB(72, 78, 88));
         const RECT outside[]{
             {image_rect.left, image_rect.top, image_rect.right, crop_rect.top},
             {image_rect.left, crop_rect.bottom, image_rect.right, image_rect.bottom},
             {image_rect.left, crop_rect.top, crop_rect.left, crop_rect.bottom},
             {crop_rect.right, crop_rect.top, image_rect.right, crop_rect.bottom},
         };
-        for (const RECT& area : outside) {
-            if (area.right > area.left && area.bottom > area.top) {
-                ::FillRect(dc, &area, mask);
-            }
-        }
-        ::DeleteObject(mask);
+        FillTranslucentRegions(dc, outside, std::size(outside));
         HPEN crop_pen = ::CreatePen(PS_SOLID, 2, RGB(26, 115, 232));
         HGDIOBJ old_pen = ::SelectObject(dc, crop_pen);
         HGDIOBJ old_brush = ::SelectObject(dc, ::GetStockObject(HOLLOW_BRUSH));
@@ -376,6 +467,73 @@ void EditorWindow::Paint() {
     }
 }
 
+void EditorWindow::InvalidateCanvas() const {
+    if (window_ == nullptr) {
+        return;
+    }
+    RECT canvas{};
+    ::GetClientRect(window_, &canvas);
+    const UINT dpi = ::GetDpiForWindow(window_);
+    canvas.top += platform::DipToPixels(kToolbarHeightDip, dpi);
+    canvas.bottom -= platform::DipToPixels(kBarHeightDip, dpi);
+    ::InvalidateRect(window_, &canvas, FALSE);
+}
+
+platform::PixelRect EditorWindow::VisibleDocumentBounds() const noexcept {
+    const platform::PixelRect full{
+        0, 0, session_.model.source().width, session_.model.source().height};
+    return crop_applied_ ? session_.model.state().crop : full;
+}
+
+void EditorWindow::ShowCropActions(const bool visible) const {
+    ::ShowWindow(apply_crop_button_, visible ? SW_SHOW : SW_HIDE);
+    ::ShowWindow(cancel_crop_button_, visible ? SW_SHOW : SW_HIDE);
+    ::EnableWindow(copy_button_, visible ? FALSE : TRUE);
+    ::EnableWindow(save_button_, visible ? FALSE : TRUE);
+    ::EnableWindow(share_button_, visible ? FALSE : TRUE);
+}
+
+void EditorWindow::EnterCropMode() {
+    if (tool_ == Tool::crop) {
+        return;
+    }
+    CommitTextEdit();
+    crop_mode_before_ = session_.model.Snapshot();
+    crop_was_applied_ = crop_applied_;
+    crop_applied_ = false;
+    session_.model.Select(std::nullopt);
+    tool_ = Tool::crop;
+    fit_ = true;
+    ShowCropActions(true);
+    InvalidateCanvas();
+}
+
+void EditorWindow::ApplyCrop() {
+    if (tool_ != Tool::crop) {
+        return;
+    }
+    history_.Commit(crop_mode_before_, session_.model.Snapshot());
+    const auto& source = session_.model.source();
+    const platform::PixelRect full{0, 0, source.width, source.height};
+    crop_applied_ = session_.model.state().crop != full;
+    tool_ = Tool::select;
+    fit_ = true;
+    ShowCropActions(false);
+    InvalidateCanvas();
+}
+
+void EditorWindow::CancelCrop() {
+    if (tool_ != Tool::crop) {
+        return;
+    }
+    session_.model.Restore(crop_mode_before_);
+    crop_applied_ = crop_was_applied_;
+    tool_ = Tool::select;
+    fit_ = true;
+    ShowCropActions(false);
+    InvalidateCanvas();
+}
+
 void EditorWindow::ZoomAt(const POINT client_point, const float factor) {
     const float document_x = (client_point.x - offset_x_) / scale_;
     const float document_y = (client_point.y - offset_y_) / scale_;
@@ -383,7 +541,7 @@ void EditorWindow::ZoomAt(const POINT client_point, const float factor) {
     offset_x_ = client_point.x - (document_x * scale_);
     offset_y_ = client_point.y - (document_y * scale_);
     fit_ = false;
-    ::InvalidateRect(window_, nullptr, FALSE);
+    InvalidateCanvas();
 }
 
 void EditorWindow::CopyAndClose() {
@@ -477,8 +635,9 @@ void EditorWindow::InsertImageFile(const wchar_t* path) {
     }
     const auto before = session_.model.Snapshot();
     auto shared_image = std::make_shared<capture::PixelBuffer>(std::move(*image));
-    const int maximum_width = std::max(1, session_.model.source().width - 40);
-    const int maximum_height = std::max(1, session_.model.source().height - 40);
+    const auto visible = VisibleDocumentBounds();
+    const int maximum_width = std::max(1, visible.width() - 40);
+    const int maximum_height = std::max(1, visible.height() - 40);
     const double scale = std::min({
         1.0,
         maximum_width / static_cast<double>(shared_image->width),
@@ -486,22 +645,27 @@ void EditorWindow::InsertImageFile(const wchar_t* path) {
     });
     Annotation annotation{
         .kind = AnnotationKind::image,
-        .start = {20, 20},
+        .start = {visible.left + 20, visible.top + 20},
         .end = {
-            20 + static_cast<int>(std::lround(shared_image->width * scale)),
-            20 + static_cast<int>(std::lround(shared_image->height * scale)),
+            visible.left + 20 +
+                static_cast<int>(std::lround(shared_image->width * scale)),
+            visible.top + 20 +
+                static_cast<int>(std::lround(shared_image->height * scale)),
         },
         .image = std::move(shared_image),
     };
     static_cast<void>(session_.model.Add(std::move(annotation)));
     history_.Commit(before, session_.model.Snapshot());
-    ::InvalidateRect(window_, nullptr, FALSE);
+    InvalidateCanvas();
 }
 
 platform::PixelPoint EditorWindow::DocumentPoint(const POINT client_point) const noexcept {
+    const auto visible = VisibleDocumentBounds();
     return {
-        static_cast<std::int32_t>(std::lround((client_point.x - offset_x_) / scale_)),
-        static_cast<std::int32_t>(std::lround((client_point.y - offset_y_) / scale_)),
+        visible.left + static_cast<std::int32_t>(
+            std::lround((client_point.x - offset_x_) / scale_)),
+        visible.top + static_cast<std::int32_t>(
+            std::lround((client_point.y - offset_y_) / scale_)),
     };
 }
 
@@ -515,9 +679,7 @@ bool EditorWindow::IsCanvasPoint(const POINT client_point) const noexcept {
         return false;
     }
     const auto document = DocumentPoint(client_point);
-    return document.x >= 0 && document.y >= 0 &&
-        document.x < session_.model.source().width &&
-        document.y < session_.model.source().height;
+    return platform::Contains(VisibleDocumentBounds(), document);
 }
 
 void EditorWindow::BeginDocumentAction(const POINT client_point) {
@@ -546,7 +708,7 @@ void EditorWindow::BeginDocumentAction(const POINT client_point) {
             dragging_ = true;
             ::SetCapture(window_);
         }
-        ::InvalidateRect(window_, nullptr, FALSE);
+        InvalidateCanvas();
         return;
     }
     if (tool_ == Tool::text) {
@@ -608,7 +770,7 @@ void EditorWindow::BeginDocumentAction(const POINT client_point) {
     active_annotation_ = session_.model.Add(annotation);
     creating_ = true;
     ::SetCapture(window_);
-    ::InvalidateRect(window_, nullptr, FALSE);
+    InvalidateCanvas();
 }
 
 void EditorWindow::UpdateDocumentAction(const POINT client_point) {
@@ -621,8 +783,9 @@ void EditorWindow::UpdateDocumentAction(const POINT client_point) {
         current.x = std::clamp(current.x, 0, source.width);
         current.y = std::clamp(current.y, 0, source.height);
     } else {
-        current.x = std::clamp(current.x, 0, source.width - 1);
-        current.y = std::clamp(current.y, 0, source.height - 1);
+        const auto visible = VisibleDocumentBounds();
+        current.x = std::clamp(current.x, visible.left, visible.right - 1);
+        current.y = std::clamp(current.y, visible.top, visible.bottom - 1);
     }
     if (crop_drafting_) {
         session_.model.SetCrop(platform::Normalize(action_anchor_, current));
@@ -650,7 +813,7 @@ void EditorWindow::UpdateDocumentAction(const POINT client_point) {
         }
     }
     last_document_point_ = current;
-    ::InvalidateRect(window_, nullptr, FALSE);
+    InvalidateCanvas();
 }
 
 void EditorWindow::EndDocumentAction(const POINT client_point) {
@@ -662,9 +825,12 @@ void EditorWindow::EndDocumentAction(const POINT client_point) {
     dragging_ = false;
     creating_ = false;
     resizing_ = false;
+    const bool completed_crop = crop_drafting_;
     crop_drafting_ = false;
-    history_.Commit(action_before_, session_.model.Snapshot());
-    ::InvalidateRect(window_, nullptr, FALSE);
+    if (!completed_crop) {
+        history_.Commit(action_before_, session_.model.Snapshot());
+    }
+    InvalidateCanvas();
 }
 
 void EditorWindow::DeleteSelection() {
@@ -674,18 +840,18 @@ void EditorWindow::DeleteSelection() {
     const auto before = session_.model.Snapshot();
     static_cast<void>(session_.model.Remove(*session_.model.state().selected));
     history_.Commit(before, session_.model.Snapshot());
-    ::InvalidateRect(window_, nullptr, FALSE);
+    InvalidateCanvas();
 }
 
 void EditorWindow::Undo() {
     if (history_.Undo(session_.model)) {
-        ::InvalidateRect(window_, nullptr, FALSE);
+        InvalidateCanvas();
     }
 }
 
 void EditorWindow::Redo() {
     if (history_.Redo(session_.model)) {
-        ::InvalidateRect(window_, nullptr, FALSE);
+        InvalidateCanvas();
     }
 }
 
@@ -744,7 +910,7 @@ void EditorWindow::CommitTextEdit() {
     };
     static_cast<void>(session_.model.Add(std::move(annotation)));
     history_.Commit(action_before_, session_.model.Snapshot());
-    ::InvalidateRect(window_, nullptr, FALSE);
+    InvalidateCanvas();
 }
 
 void EditorWindow::CancelTextEdit() {
@@ -776,15 +942,18 @@ void EditorWindow::PasteObject() {
         }
         const auto before = session_.model.Snapshot();
         auto shared_image = std::make_shared<capture::PixelBuffer>(std::move(*image));
+        const auto visible = VisibleDocumentBounds();
         Annotation annotation{
             .kind = AnnotationKind::image,
-            .start = {20, 20},
-            .end = {20 + shared_image->width, 20 + shared_image->height},
+            .start = {visible.left + 20, visible.top + 20},
+            .end = {
+                visible.left + 20 + shared_image->width,
+                visible.top + 20 + shared_image->height},
             .image = std::move(shared_image),
         };
         static_cast<void>(session_.model.Add(std::move(annotation)));
         history_.Commit(before, session_.model.Snapshot());
-        ::InvalidateRect(window_, nullptr, FALSE);
+        InvalidateCanvas();
         return;
     }
     const auto before = session_.model.Snapshot();
@@ -799,7 +968,7 @@ void EditorWindow::PasteObject() {
     }
     static_cast<void>(session_.model.Add(std::move(copy)));
     history_.Commit(before, session_.model.Snapshot());
-    ::InvalidateRect(window_, nullptr, FALSE);
+    InvalidateCanvas();
 }
 
 LRESULT CALLBACK EditorWindow::TextEditProcedure(
@@ -850,32 +1019,38 @@ LRESULT EditorWindow::HandleMessage(
     const LPARAM l_param
 ) {
     switch (message) {
-    case WM_COMMAND:
+    case WM_COMMAND: {
+        const auto choose_tool = [this](const Tool next) {
+            if (tool_ == Tool::crop && next != Tool::crop) {
+                CancelCrop();
+            }
+            tool_ = next;
+        };
         if (reinterpret_cast<HWND>(l_param) == text_edit_ &&
             HIWORD(w_param) == EN_KILLFOCUS) {
             ::PostMessageW(window_, kCommitTextEdit, 0, 0);
         } else if (LOWORD(w_param) == kCopyButton) {
             CopyAndClose();
         } else if (LOWORD(w_param) == kSelectButton) {
-            tool_ = Tool::select;
+            choose_tool(Tool::select);
         } else if (LOWORD(w_param) == kRectangleButton) {
-            tool_ = Tool::rectangle;
+            choose_tool(Tool::rectangle);
         } else if (LOWORD(w_param) == kLineButton) {
-            tool_ = Tool::line;
+            choose_tool(Tool::line);
         } else if (LOWORD(w_param) == kEllipseButton) {
-            tool_ = Tool::ellipse;
+            choose_tool(Tool::ellipse);
         } else if (LOWORD(w_param) == kStarButton) {
-            tool_ = Tool::star;
+            choose_tool(Tool::star);
         } else if (LOWORD(w_param) == kArrowButton) {
-            tool_ = Tool::arrow;
+            choose_tool(Tool::arrow);
         } else if (LOWORD(w_param) == kCurvedArrowButton) {
-            tool_ = Tool::curved_arrow;
+            choose_tool(Tool::curved_arrow);
         } else if (LOWORD(w_param) == kMarkerButton) {
-            tool_ = Tool::marker;
+            choose_tool(Tool::marker);
         } else if (LOWORD(w_param) == kTextButton) {
-            tool_ = Tool::text;
+            choose_tool(Tool::text);
         } else if (LOWORD(w_param) == kBlurButton) {
-            tool_ = Tool::blur;
+            choose_tool(Tool::blur);
             if (!blur_warning_shown_) {
                 blur_warning_shown_ = true;
                 ::MessageBoxW(window_,
@@ -883,13 +1058,18 @@ LRESULT EditorWindow::HandleMessage(
                     L"Screenshooter", MB_OK | MB_ICONINFORMATION);
             }
         } else if (LOWORD(w_param) == kCropButton) {
-            tool_ = Tool::crop;
+            EnterCropMode();
+        } else if (LOWORD(w_param) == kApplyCropButton) {
+            ApplyCrop();
+        } else if (LOWORD(w_param) == kCancelCropButton) {
+            CancelCrop();
         } else if (LOWORD(w_param) == kSaveButton) {
             SaveAs();
         } else if (LOWORD(w_param) == kShareButton) {
             Share();
         }
         return 0;
+    }
     case kCommitTextEdit:
         CommitTextEdit();
         ::SetFocus(window_);
@@ -944,7 +1124,7 @@ LRESULT EditorWindow::HandleMessage(
             offset_x_ += static_cast<float>(current.x - last_pan_.x);
             offset_y_ += static_cast<float>(current.y - last_pan_.y);
             last_pan_ = current;
-            ::InvalidateRect(window_, nullptr, FALSE);
+            InvalidateCanvas();
         }
         return 0;
     case WM_MBUTTONUP:
@@ -952,6 +1132,11 @@ LRESULT EditorWindow::HandleMessage(
         ::ReleaseCapture();
         return 0;
     case WM_KEYDOWN:
+        if (w_param == VK_ESCAPE && tool_ == Tool::crop &&
+            !dragging_ && !creating_ && !resizing_ && !crop_drafting_) {
+            CancelCrop();
+            return 0;
+        }
         if (w_param == VK_ESCAPE &&
             (dragging_ || creating_ || resizing_ || crop_drafting_)) {
             session_.model.Restore(action_before_);
@@ -960,7 +1145,7 @@ LRESULT EditorWindow::HandleMessage(
             resizing_ = false;
             crop_drafting_ = false;
             ::ReleaseCapture();
-            ::InvalidateRect(window_, nullptr, FALSE);
+            InvalidateCanvas();
             return 0;
         }
         if ((::GetKeyState(VK_CONTROL) & 0x8000) != 0) {
@@ -983,7 +1168,7 @@ LRESULT EditorWindow::HandleMessage(
             }
             if (w_param == '0') {
                 fit_ = true;
-                ::InvalidateRect(window_, nullptr, FALSE);
+                InvalidateCanvas();
                 return 0;
             }
             if (w_param == 'Z') {
@@ -1027,7 +1212,7 @@ LRESULT EditorWindow::HandleMessage(
             static_cast<void>(session_.model.Move(
                 *session_.model.state().selected, delta));
             history_.Commit(before, session_.model.Snapshot());
-            ::InvalidateRect(window_, nullptr, FALSE);
+            InvalidateCanvas();
             return 0;
         }
         return 0;
