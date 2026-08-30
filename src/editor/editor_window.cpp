@@ -797,8 +797,10 @@ void EditorWindow::EndDocumentAction(const POINT client_point) {
             annotation != nullptr && annotation->kind == AnnotationKind::arrow &&
             std::abs(annotation->end.x - annotation->start.x) <= 8 &&
             std::abs(annotation->end.y - annotation->start.y) <= 8) {
-            annotation->end = DefaultArrowEnd(
-                annotation->start, VisibleDocumentBounds());
+            const platform::PixelPoint tip = annotation->end;
+            annotation->start = DefaultArrowStart(
+                tip, VisibleDocumentBounds());
+            annotation->end = tip;
         }
     }
     ::ReleaseCapture();

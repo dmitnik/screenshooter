@@ -70,12 +70,12 @@ bool Hits(const Annotation& annotation, const platform::PixelPoint point) {
 
 }  // namespace
 
-platform::PixelPoint DefaultArrowEnd(
-    const platform::PixelPoint start,
+platform::PixelPoint DefaultArrowStart(
+    const platform::PixelPoint end,
     const platform::PixelRect bounds
 ) noexcept {
     if (bounds.empty()) {
-        return start;
+        return end;
     }
 
     struct Direction {
@@ -83,21 +83,28 @@ platform::PixelPoint DefaultArrowEnd(
         std::int32_t available;
     };
     const std::array directions{
-        Direction{{1, 0}, bounds.right - 1 - start.x},
-        Direction{{-1, 0}, start.x - bounds.left},
-        Direction{{0, 1}, bounds.bottom - 1 - start.y},
-        Direction{{0, -1}, start.y - bounds.top},
+        Direction{{-1, 0}, end.x - bounds.left},
+        Direction{{1, 0}, bounds.right - 1 - end.x},
+        Direction{{0, -1}, end.y - bounds.top},
+        Direction{{0, 1}, bounds.bottom - 1 - end.y},
     };
-    const auto best = std::max_element(
+    constexpr std::int32_t kDefaultLength = 20;
+    auto chosen = std::find_if(
         directions.begin(), directions.end(),
-        [](const Direction& left, const Direction& right) {
-            return left.available < right.available;
+        [](const Direction& direction) {
+            return direction.available >= kDefaultLength;
         });
-    constexpr std::int32_t kDefaultLength = 96;
-    const std::int32_t length = std::clamp(best->available, 0, kDefaultLength);
+    if (chosen == directions.end()) {
+        chosen = std::max_element(
+            directions.begin(), directions.end(),
+            [](const Direction& left, const Direction& right) {
+                return left.available < right.available;
+            });
+    }
+    const std::int32_t length = std::clamp(chosen->available, 0, kDefaultLength);
     return {
-        start.x + (best->delta.x * length),
-        start.y + (best->delta.y * length),
+        end.x + (chosen->delta.x * length),
+        end.y + (chosen->delta.y * length),
     };
 }
 

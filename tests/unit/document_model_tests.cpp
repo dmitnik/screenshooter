@@ -9,7 +9,7 @@ using screenshooter::editor::AnnotationKind;
 using screenshooter::editor::CommandHistory;
 using screenshooter::editor::DocumentModel;
 using screenshooter::editor::DocumentRenderer;
-using screenshooter::editor::DefaultArrowEnd;
+using screenshooter::editor::DefaultArrowStart;
 using screenshooter::platform::PixelPoint;
 using screenshooter::platform::PixelRect;
 
@@ -120,10 +120,14 @@ TEST_CASE("Shape renderer draws a visible arrow and ellipse") {
     REQUIRE(std::to_integer<unsigned>(rendered.row(10)[40 * 4 + 2]) > 0U);
 }
 
-TEST_CASE("Default click arrow uses the longest available direction") {
+TEST_CASE("Default click arrow keeps its tip and places a short tail behind it") {
     const PixelRect bounds{0, 0, 200, 100};
-    REQUIRE(DefaultArrowEnd({50, 50}, bounds) == PixelPoint{146, 50});
-    REQUIRE(DefaultArrowEnd({190, 50}, bounds) == PixelPoint{94, 50});
+    REQUIRE(DefaultArrowStart({50, 50}, bounds) == PixelPoint{30, 50});
+    REQUIRE(DefaultArrowStart({10, 50}, bounds) == PixelPoint{30, 50});
+    REQUIRE(DefaultArrowStart({190, 50}, bounds) == PixelPoint{170, 50});
+
+    const PixelRect narrow_bounds{0, 0, 10, 10};
+    REQUIRE(DefaultArrowStart({5, 5}, narrow_bounds) == PixelPoint{0, 5});
 }
 
 TEST_CASE("Pixelation consumes lower raster while later annotations stay sharp") {

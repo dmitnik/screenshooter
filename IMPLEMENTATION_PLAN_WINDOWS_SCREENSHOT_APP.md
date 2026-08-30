@@ -419,7 +419,7 @@ Exit criteria:
 Порядок реализации снижает зависимость между сложными инструментами:
 
 1. ellipse на общей shape infrastructure;
-2. straight arrow; короткий клик создаёт стрелку с заметным хвостом;
+2. straight arrow; короткий клик оставляет остриё в точке клика и создаёт хвост размером около 20 пикселей;
 3. marker stroke со сглаживанием и alpha compositing;
 4. text object, native edit overlay, DirectWrite wrapping и три preset styles;
 5. image paste из bitmap, file drop и scale handles;

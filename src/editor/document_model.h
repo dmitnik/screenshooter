@@ -24,8 +24,8 @@ enum class AnnotationKind {
     blur,
 };
 
-[[nodiscard]] platform::PixelPoint DefaultArrowEnd(
-    platform::PixelPoint start,
+[[nodiscard]] platform::PixelPoint DefaultArrowStart(
+    platform::PixelPoint end,
     platform::PixelRect bounds
 ) noexcept;
 
