@@ -7,6 +7,7 @@ using screenshooter::capture::CreateOpaqueBuffer;
 using screenshooter::editor::Annotation;
 using screenshooter::editor::AnnotationKind;
 using screenshooter::editor::CommandHistory;
+using screenshooter::editor::ConstrainShapeEnd;
 using screenshooter::editor::DocumentModel;
 using screenshooter::editor::DocumentRenderer;
 using screenshooter::editor::DefaultArrowStart;
@@ -128,6 +129,54 @@ TEST_CASE("Default click arrow keeps its tip and places a short tail behind it")
 
     const PixelRect narrow_bounds{0, 0, 10, 10};
     REQUIRE(DefaultArrowStart({5, 5}, narrow_bounds) == PixelPoint{0, 5});
+}
+
+TEST_CASE("Shift constraint snaps lines and arrows to 45 degree increments") {
+    const PixelRect bounds{0, 0, 200, 200};
+    const PixelPoint start{50, 50};
+
+    REQUIRE(ConstrainShapeEnd(
+        AnnotationKind::line, start, {90, 58}, bounds) == PixelPoint{90, 50});
+    REQUIRE(ConstrainShapeEnd(
+        AnnotationKind::line, start, {58, 90}, bounds) == PixelPoint{50, 90});
+    REQUIRE(ConstrainShapeEnd(
+        AnnotationKind::line, start, {10, 42}, bounds) == PixelPoint{10, 50});
+    REQUIRE(ConstrainShapeEnd(
+        AnnotationKind::line, start, {58, 10}, bounds) == PixelPoint{50, 10});
+    REQUIRE(ConstrainShapeEnd(
+        AnnotationKind::arrow, start, {80, 70}, bounds) == PixelPoint{80, 80});
+    REQUIRE(ConstrainShapeEnd(
+        AnnotationKind::arrow, start, {28, 80}, bounds) == PixelPoint{20, 80});
+    REQUIRE(ConstrainShapeEnd(
+        AnnotationKind::arrow, start, {80, 28}, bounds) == PixelPoint{80, 20});
+    REQUIRE(ConstrainShapeEnd(
+        AnnotationKind::arrow, start, {28, 20}, bounds) == PixelPoint{20, 20});
+}
+
+TEST_CASE("Shift constraint turns rectangles and ellipses into equal-sided shapes") {
+    const PixelRect bounds{0, 0, 200, 200};
+    const PixelPoint start{50, 50};
+
+    REQUIRE(ConstrainShapeEnd(
+        AnnotationKind::rectangle, start, {80, 65}, bounds) == PixelPoint{80, 80});
+    REQUIRE(ConstrainShapeEnd(
+        AnnotationKind::rectangle, start, {30, 75}, bounds) == PixelPoint{25, 75});
+    REQUIRE(ConstrainShapeEnd(
+        AnnotationKind::ellipse, start, {65, 20}, bounds) == PixelPoint{80, 20});
+    REQUIRE(ConstrainShapeEnd(
+        AnnotationKind::ellipse, {190, 190}, {199, 195}, bounds) == PixelPoint{199, 199});
+    REQUIRE(ConstrainShapeEnd(
+        AnnotationKind::rectangle, {190, 50}, {190, 100}, bounds) == PixelPoint{140, 100});
+    REQUIRE(ConstrainShapeEnd(
+        AnnotationKind::ellipse, {50, 190}, {100, 190}, bounds) == PixelPoint{100, 140});
+}
+
+TEST_CASE("Shift constraint leaves unrelated tools unchanged") {
+    const PixelRect bounds{0, 0, 200, 200};
+    REQUIRE(ConstrainShapeEnd(
+        AnnotationKind::blur, {50, 50}, {90, 65}, bounds) == PixelPoint{90, 65});
+    REQUIRE(ConstrainShapeEnd(
+        AnnotationKind::marker, {50, 50}, {90, 65}, bounds) == PixelPoint{90, 65});
 }
 
 TEST_CASE("Pixelation consumes lower raster while later annotations stay sharp") {

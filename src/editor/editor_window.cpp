@@ -750,7 +750,10 @@ void EditorWindow::BeginDocumentAction(const POINT client_point) {
     InvalidateCanvas();
 }
 
-void EditorWindow::UpdateDocumentAction(const POINT client_point) {
+void EditorWindow::UpdateDocumentAction(
+    const POINT client_point,
+    const bool constrain_geometry
+) {
     if (!dragging_ && !creating_ && !resizing_ && !crop_drafting_) {
         return;
     }
@@ -778,6 +781,14 @@ void EditorWindow::UpdateDocumentAction(const POINT client_point) {
         static_cast<void>(session_.model.Move(active_annotation_, delta));
     } else if (Annotation* annotation = session_.model.Find(active_annotation_)) {
         annotation->end = current;
+        if (constrain_geometry) {
+            annotation->end = ConstrainShapeEnd(
+                annotation->kind,
+                annotation->start,
+                annotation->end,
+                VisibleDocumentBounds()
+            );
+        }
         if (annotation->kind == AnnotationKind::marker &&
             (annotation->points.empty() || annotation->points.back() != current)) {
             annotation->points.push_back(current);
@@ -787,11 +798,14 @@ void EditorWindow::UpdateDocumentAction(const POINT client_point) {
     InvalidateCanvas();
 }
 
-void EditorWindow::EndDocumentAction(const POINT client_point) {
+void EditorWindow::EndDocumentAction(
+    const POINT client_point,
+    const bool constrain_geometry
+) {
     if (!dragging_ && !creating_ && !resizing_ && !crop_drafting_) {
         return;
     }
-    UpdateDocumentAction(client_point);
+    UpdateDocumentAction(client_point, constrain_geometry);
     if (creating_) {
         if (Annotation* annotation = session_.model.Find(active_annotation_);
             annotation != nullptr && annotation->kind == AnnotationKind::arrow &&
@@ -1081,7 +1095,10 @@ LRESULT EditorWindow::HandleMessage(
         BeginDocumentAction(POINT{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)});
         return 0;
     case WM_LBUTTONUP:
-        EndDocumentAction(POINT{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)});
+        EndDocumentAction(
+            POINT{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)},
+            (w_param & MK_SHIFT) != 0
+        );
         return 0;
     case WM_MBUTTONDOWN:
         panning_ = true;
@@ -1090,7 +1107,10 @@ LRESULT EditorWindow::HandleMessage(
         ::SetCapture(window_);
         return 0;
     case WM_MOUSEMOVE:
-        UpdateDocumentAction(POINT{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)});
+        UpdateDocumentAction(
+            POINT{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)},
+            (w_param & MK_SHIFT) != 0
+        );
         if (panning_) {
             const POINT current{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)};
             offset_x_ += static_cast<float>(current.x - last_pan_.x);

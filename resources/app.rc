@@ -6,8 +6,8 @@
 CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "app.manifest"
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 0,1,7,0
- PRODUCTVERSION 0,1,7,0
+ FILEVERSION 0,1,8,0
+ PRODUCTVERSION 0,1,8,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS VS_FF_DEBUG
@@ -24,11 +24,11 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "Screenshooter"
             VALUE "FileDescription", "Локальный редактор снимков экрана"
-            VALUE "FileVersion", "0.1.7"
+            VALUE "FileVersion", "0.1.8"
             VALUE "InternalName", "screenshooter"
             VALUE "OriginalFilename", "screenshooter.exe"
             VALUE "ProductName", "Screenshooter"
-            VALUE "ProductVersion", "0.1.7"
+            VALUE "ProductVersion", "0.1.8"
         END
     END
     BLOCK "VarFileInfo"

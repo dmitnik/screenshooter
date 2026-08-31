@@ -54,8 +54,8 @@ private:
     void CancelCrop();
     void ShowCropActions(bool visible) const;
     void BeginDocumentAction(POINT client_point);
-    void UpdateDocumentAction(POINT client_point);
-    void EndDocumentAction(POINT client_point);
+    void UpdateDocumentAction(POINT client_point, bool constrain_geometry);
+    void EndDocumentAction(POINT client_point, bool constrain_geometry);
     void DeleteSelection();
     void Undo();
     void Redo();

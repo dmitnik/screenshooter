@@ -29,6 +29,13 @@ enum class AnnotationKind {
     platform::PixelRect bounds
 ) noexcept;
 
+[[nodiscard]] platform::PixelPoint ConstrainShapeEnd(
+    AnnotationKind kind,
+    platform::PixelPoint start,
+    platform::PixelPoint end,
+    platform::PixelRect bounds
+) noexcept;
+
 struct Annotation {
     AnnotationId id{};
     AnnotationKind kind{AnnotationKind::rectangle};

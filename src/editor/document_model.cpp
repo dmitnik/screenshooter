@@ -108,6 +108,66 @@ platform::PixelPoint DefaultArrowStart(
     };
 }
 
+platform::PixelPoint ConstrainShapeEnd(
+    const AnnotationKind kind,
+    const platform::PixelPoint start,
+    const platform::PixelPoint end,
+    const platform::PixelRect bounds
+) noexcept {
+    const bool square = kind == AnnotationKind::rectangle ||
+        kind == AnnotationKind::ellipse;
+    const bool angled = kind == AnnotationKind::line ||
+        kind == AnnotationKind::arrow;
+    if ((!square && !angled) || bounds.empty() || start == end) {
+        return end;
+    }
+
+    const std::int32_t dx = end.x - start.x;
+    const std::int32_t dy = end.y - start.y;
+    const std::int32_t absolute_x = std::abs(dx);
+    const std::int32_t absolute_y = std::abs(dy);
+    constexpr double kTan22Point5Degrees = 0.41421356237309503;
+
+    if (angled &&
+        absolute_y <= static_cast<double>(absolute_x) * kTan22Point5Degrees) {
+        return {end.x, start.y};
+    }
+    if (angled &&
+        absolute_x <= static_cast<double>(absolute_y) * kTan22Point5Degrees) {
+        return {start.x, end.y};
+    }
+
+    const auto available = [](const std::int32_t coordinate,
+                              const std::int32_t direction,
+                              const std::int32_t lower,
+                              const std::int32_t upper) {
+        return direction < 0 ? coordinate - lower : upper - 1 - coordinate;
+    };
+    const auto direction = [](const std::int32_t delta,
+                              const std::int32_t coordinate,
+                              const std::int32_t lower,
+                              const std::int32_t upper) {
+        if (delta != 0) {
+            return delta < 0 ? -1 : 1;
+        }
+        return coordinate - lower > upper - 1 - coordinate ? -1 : 1;
+    };
+    const std::int32_t direction_x = direction(
+        dx, start.x, bounds.left, bounds.right);
+    const std::int32_t direction_y = direction(
+        dy, start.y, bounds.top, bounds.bottom);
+    const std::int32_t maximum_side = std::max(0, std::min(
+        available(start.x, direction_x, bounds.left, bounds.right),
+        available(start.y, direction_y, bounds.top, bounds.bottom)
+    ));
+    const std::int32_t side = std::min(
+        std::max(absolute_x, absolute_y), maximum_side);
+    return {
+        start.x + (direction_x * side),
+        start.y + (direction_y * side),
+    };
+}
+
 DocumentModel::DocumentModel(capture::PixelBuffer source)
 {
     state_.source = std::make_shared<const capture::PixelBuffer>(std::move(source));
