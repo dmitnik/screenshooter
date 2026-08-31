@@ -34,5 +34,11 @@ struct PixelRect {
 [[nodiscard]] PixelRect Normalize(PixelPoint first, PixelPoint second) noexcept;
 [[nodiscard]] PixelRect Intersect(PixelRect first, PixelRect second) noexcept;
 [[nodiscard]] bool Contains(PixelRect rect, PixelPoint point) noexcept;
+[[nodiscard]] PixelRect FitCenteredRect(
+    PixelSize desired,
+    PixelSize minimum,
+    PixelSize maximum,
+    PixelRect bounds
+) noexcept;
 
 }  // namespace screenshooter::platform

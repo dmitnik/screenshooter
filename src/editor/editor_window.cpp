@@ -58,6 +58,59 @@ bool RegisterEditorClass(const HINSTANCE instance) {
         ::GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
 }
 
+platform::PixelRect CursorMonitorWorkArea() noexcept {
+    POINT cursor{};
+    if (!::GetCursorPos(&cursor)) {
+        cursor = {};
+    }
+    const HMONITOR monitor = ::MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO info{.cbSize = sizeof(MONITORINFO)};
+    if (monitor != nullptr && ::GetMonitorInfoW(monitor, &info)) {
+        return {info.rcWork.left, info.rcWork.top, info.rcWork.right, info.rcWork.bottom};
+    }
+
+    RECT work_area{};
+    if (::SystemParametersInfoW(SPI_GETWORKAREA, 0, &work_area, 0)) {
+        return {work_area.left, work_area.top, work_area.right, work_area.bottom};
+    }
+    return {0, 0, ::GetSystemMetrics(SM_CXSCREEN), ::GetSystemMetrics(SM_CYSCREEN)};
+}
+
+void ActivateEditorWindow(const HWND window) noexcept {
+    ::ShowWindow(window, SW_SHOWNORMAL);
+    ::BringWindowToTop(window);
+    ::SetForegroundWindow(window);
+
+    const HWND foreground = ::GetForegroundWindow();
+    const DWORD current_thread = ::GetCurrentThreadId();
+    DWORD foreground_thread = 0;
+    if (foreground != nullptr && foreground != window) {
+        foreground_thread = ::GetWindowThreadProcessId(foreground, nullptr);
+    }
+    const bool attached = foreground_thread != 0 &&
+        foreground_thread != current_thread &&
+        ::AttachThreadInput(current_thread, foreground_thread, TRUE) != FALSE;
+    if (attached) {
+        ::BringWindowToTop(window);
+        ::SetForegroundWindow(window);
+    }
+    ::SetActiveWindow(window);
+    ::SetFocus(window);
+    if (attached) {
+        ::AttachThreadInput(current_thread, foreground_thread, FALSE);
+    }
+
+    if (::GetForegroundWindow() != window) {
+        FLASHWINFO flash{
+            .cbSize = sizeof(FLASHWINFO),
+            .hwnd = window,
+            .dwFlags = FLASHW_TRAY,
+            .uCount = 3,
+        };
+        ::FlashWindowEx(&flash);
+    }
+}
+
 void FillTranslucentRegions(
     const HDC target,
     const RECT* regions,
@@ -133,17 +186,25 @@ bool EditorWindow::CreateNativeWindow() {
     }
 
     const auto title = L"Снимок " + std::to_wstring(session_.id) + L" — Screenshooter";
-    const int width = std::clamp(session_.model.source().width + 80, 1080, 1440);
-    const int height = std::clamp(session_.model.source().height + 188, 520, 900);
+    const platform::PixelSize desired{
+        std::min(session_.model.source().width, 1360) + 80,
+        std::min(session_.model.source().height, 712) + 188,
+    };
+    const platform::PixelRect placement = platform::FitCenteredRect(
+        desired,
+        {1080, 520},
+        {1440, 900},
+        CursorMonitorWorkArea()
+    );
     window_ = ::CreateWindowExW(
         0,
         kWindowClass,
         title.c_str(),
         WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
-        CW_USEDEFAULT,
-        CW_USEDEFAULT,
-        width,
-        height,
+        placement.left,
+        placement.top,
+        placement.width(),
+        placement.height(),
         nullptr,
         nullptr,
         instance_,
@@ -155,7 +216,7 @@ bool EditorWindow::CreateNativeWindow() {
     ::SetWindowDisplayAffinity(window_, WDA_EXCLUDEFROMCAPTURE);
     CreateControls();
     LayoutControls();
-    ::ShowWindow(window_, SW_SHOWNORMAL);
+    ActivateEditorWindow(window_);
     ::UpdateWindow(window_);
     return true;
 }

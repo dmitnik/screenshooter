@@ -3,10 +3,12 @@
 #include <catch2/catch_test_macros.hpp>
 
 using screenshooter::platform::Contains;
+using screenshooter::platform::FitCenteredRect;
 using screenshooter::platform::Intersect;
 using screenshooter::platform::Normalize;
 using screenshooter::platform::PixelPoint;
 using screenshooter::platform::PixelRect;
+using screenshooter::platform::PixelSize;
 
 TEST_CASE("Selection coordinates normalize across negative monitor origins") {
     const PixelRect result = Normalize(PixelPoint{200, 100}, PixelPoint{-300, -50});
@@ -33,4 +35,23 @@ TEST_CASE("Rectangle containment uses exclusive right and bottom edges") {
     REQUIRE(Contains(rect, PixelPoint{9, 9}));
     REQUIRE_FALSE(Contains(rect, PixelPoint{10, 9}));
     REQUIRE_FALSE(Contains(rect, PixelPoint{9, 10}));
+}
+
+TEST_CASE("Editor window is centered and limited to the monitor work area") {
+    REQUIRE(FitCenteredRect(
+        PixelSize{1440, 900}, PixelSize{1080, 520}, PixelSize{1440, 900},
+        PixelRect{0, 0, 1920, 1040}
+    ) == PixelRect{240, 70, 1680, 970});
+
+    REQUIRE(FitCenteredRect(
+        PixelSize{1080, 520}, PixelSize{1080, 520}, PixelSize{1440, 900},
+        PixelRect{-1920, 0, 0, 1040}
+    ) == PixelRect{-1500, 260, -420, 780});
+}
+
+TEST_CASE("Editor window shrinks when the work area is below its preferred minimum") {
+    REQUIRE(FitCenteredRect(
+        PixelSize{1080, 520}, PixelSize{1080, 520}, PixelSize{1440, 900},
+        PixelRect{100, 50, 900, 500}
+    ) == PixelRect{100, 50, 900, 500});
 }
