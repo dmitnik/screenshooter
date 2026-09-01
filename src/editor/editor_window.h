@@ -61,7 +61,6 @@ private:
     void Redo();
     void BeginTextEdit(POINT client_point);
     void CommitTextEdit();
-    void CancelTextEdit();
     void CopySelectedObject();
     void PasteObject();
     static LRESULT CALLBACK TextEditProcedure(

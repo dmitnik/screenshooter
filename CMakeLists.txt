@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.28)
 
 project(
     Screenshooter
-    VERSION 0.1.10
+    VERSION 0.1.11
     DESCRIPTION "Fast native screenshot editor for Windows"
     LANGUAGES CXX RC
 )
@@ -20,6 +20,7 @@ add_library(screenshooter_core STATIC
     src/editor/document_renderer.cpp
     src/export/clipboard_service.cpp
     src/export/image_file_service.cpp
+    src/export/screenshot_file_name.cpp
     src/export/share_service.cpp
     src/platform/dpi.cpp
     src/platform/geometry.cpp
@@ -146,6 +147,7 @@ if(BUILD_TESTING AND SCREENSHOOTER_BUILD_TESTS)
         tests/unit/settings_store_tests.cpp
         tests/unit/dpi_tests.cpp
         tests/unit/geometry_tests.cpp
+        tests/unit/screenshot_file_name_tests.cpp
         tests/unit/unique_handle_tests.cpp
     )
 

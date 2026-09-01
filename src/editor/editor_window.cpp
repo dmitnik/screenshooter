@@ -4,6 +4,7 @@
 #include "editor/document_renderer.h"
 #include "export/clipboard_service.h"
 #include "export/image_file_service.h"
+#include "export/screenshot_file_name.h"
 #include "platform/dpi.h"
 #include "settings/settings_store.h"
 
@@ -40,7 +41,6 @@ constexpr int kCancelCropButton = 3113;
 constexpr int kBarHeightDip = 54;
 constexpr int kToolbarHeightDip = 48;
 constexpr UINT kCommitTextEdit = WM_APP + 20;
-constexpr UINT kCancelTextEdit = WM_APP + 21;
 
 bool RegisterEditorClass(const HINSTANCE instance) {
     WNDCLASSEXW window_class{
@@ -663,7 +663,7 @@ void EditorWindow::SaveAs() {
             dialog->SetFolder(folder.Get());
         }
     }
-    const std::wstring default_name = L"Снимок " + std::to_wstring(session_.id);
+    const std::wstring default_name = exporting::CurrentScreenshotFileName();
     dialog->SetFileName(default_name.c_str());
     const HRESULT shown = dialog->Show(window_);
     if (shown == HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
@@ -1017,17 +1017,6 @@ void EditorWindow::CommitTextEdit() {
     InvalidateCanvas();
 }
 
-void EditorWindow::CancelTextEdit() {
-    if (text_edit_ == nullptr) {
-        return;
-    }
-    const HWND edit = text_edit_;
-    text_edit_ = nullptr;
-    ::RemoveWindowSubclass(edit, &EditorWindow::TextEditProcedure, 1);
-    ::DestroyWindow(edit);
-    ::SetFocus(window_);
-}
-
 void EditorWindow::CopySelectedObject() {
     if (!session_.model.state().selected.has_value()) {
         return;
@@ -1086,7 +1075,7 @@ LRESULT CALLBACK EditorWindow::TextEditProcedure(
     auto* editor = reinterpret_cast<EditorWindow*>(reference_data);
     if (message == WM_KEYDOWN) {
         if (w_param == VK_ESCAPE) {
-            ::PostMessageW(editor->window_, kCancelTextEdit, 0, 0);
+            ::PostMessageW(editor->window_, WM_CLOSE, 0, 0);
             return 0;
         }
         if (w_param == VK_RETURN && (::GetKeyState(VK_CONTROL) & 0x8000) != 0) {
@@ -1168,9 +1157,6 @@ LRESULT EditorWindow::HandleMessage(
         CommitTextEdit();
         ::SetFocus(window_);
         return 0;
-    case kCancelTextEdit:
-        CancelTextEdit();
-        return 0;
     case WM_SIZE:
         LayoutControls();
         ::InvalidateRect(window_, nullptr, FALSE);
@@ -1232,21 +1218,8 @@ LRESULT EditorWindow::HandleMessage(
         ::ReleaseCapture();
         return 0;
     case WM_KEYDOWN:
-        if (w_param == VK_ESCAPE && tool_ == Tool::crop &&
-            !dragging_ && !creating_ && !resizing_ && !crop_drafting_) {
-            CancelCrop();
-            return 0;
-        }
-        if (w_param == VK_ESCAPE &&
-            (dragging_ || creating_ || resizing_ || crop_drafting_)) {
-            session_.model.Restore(action_before_);
-            dragging_ = false;
-            creating_ = false;
-            resizing_ = false;
-            resize_handle_ = ResizeHandle::none;
-            crop_drafting_ = false;
-            ::ReleaseCapture();
-            InvalidateCanvas();
+        if (w_param == VK_ESCAPE) {
+            ::SendMessageW(window_, WM_CLOSE, 0, 0);
             return 0;
         }
         if ((::GetKeyState(VK_CONTROL) & 0x8000) != 0) {
