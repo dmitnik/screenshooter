@@ -666,6 +666,7 @@ void EditorWindow::SaveAs() {
     const std::wstring default_name = exporting::CurrentScreenshotFileName();
     dialog->SetFileName(default_name.c_str());
     const HRESULT shown = dialog->Show(window_);
+    ::SetFocus(window_);
     if (shown == HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
         return;
     }
