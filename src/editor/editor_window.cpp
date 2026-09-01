@@ -4,7 +4,6 @@
 #include "editor/document_renderer.h"
 #include "export/clipboard_service.h"
 #include "export/image_file_service.h"
-#include "export/screenshot_file_name.h"
 #include "platform/dpi.h"
 #include "settings/settings_store.h"
 
@@ -185,7 +184,7 @@ bool EditorWindow::CreateNativeWindow() {
         return false;
     }
 
-    const auto title = L"Снимок " + std::to_wstring(session_.id) + L" — Screenshooter";
+    const auto title = session_.screenshot_name + L" — Screenshooter";
     const platform::PixelSize desired{
         std::min(session_.model.source().width, 1360) + 80,
         std::min(session_.model.source().height, 712) + 188,
@@ -663,8 +662,7 @@ void EditorWindow::SaveAs() {
             dialog->SetFolder(folder.Get());
         }
     }
-    const std::wstring default_name = exporting::CurrentScreenshotFileName();
-    dialog->SetFileName(default_name.c_str());
+    dialog->SetFileName(session_.screenshot_name.c_str());
     const HRESULT shown = dialog->Show(window_);
     ::SetFocus(window_);
     if (shown == HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
@@ -1220,7 +1218,11 @@ LRESULT EditorWindow::HandleMessage(
         return 0;
     case WM_KEYDOWN:
         if (w_param == VK_ESCAPE) {
-            ::SendMessageW(window_, WM_CLOSE, 0, 0);
+            if (session_.model.state().selected.has_value()) {
+                DeleteSelection();
+            } else {
+                ::SendMessageW(window_, WM_CLOSE, 0, 0);
+            }
             return 0;
         }
         if ((::GetKeyState(VK_CONTROL) & 0x8000) != 0) {
