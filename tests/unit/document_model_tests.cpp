@@ -11,6 +11,9 @@ using screenshooter::editor::ConstrainShapeEnd;
 using screenshooter::editor::DocumentModel;
 using screenshooter::editor::DocumentRenderer;
 using screenshooter::editor::DefaultArrowStart;
+using screenshooter::editor::HitResizeHandle;
+using screenshooter::editor::ResizeAnnotationEndpoint;
+using screenshooter::editor::ResizeHandle;
 using screenshooter::platform::PixelPoint;
 using screenshooter::platform::PixelRect;
 
@@ -29,6 +32,16 @@ TEST_CASE("Hit testing returns the topmost annotation") {
 
     REQUIRE(model.HitTest(PixelPoint{45, 45}) == upper);
     REQUIRE(lower != upper);
+}
+
+TEST_CASE("Filled blur annotation can be selected from its interior") {
+    DocumentModel model(CreateOpaqueBuffer(100, 100));
+    const auto blur = model.Add(Annotation{
+        .kind = AnnotationKind::blur,
+        .start = {10, 10},
+        .end = {80, 80},
+    });
+    REQUIRE(model.HitTest(PixelPoint{45, 45}) == blur);
 }
 
 TEST_CASE("One drag transaction contains many move events") {
@@ -54,6 +67,41 @@ TEST_CASE("One drag transaction contains many move events") {
     REQUIRE(history.Redo(model));
     REQUIRE(model.Find(id)->start == PixelPoint{110, 10});
     REQUIRE(model.dirty());
+}
+
+TEST_CASE("Selected annotation exposes both resize endpoints") {
+    Annotation annotation{
+        .kind = AnnotationKind::arrow,
+        .start = {20, 30},
+        .end = {80, 60},
+    };
+
+    REQUIRE(HitResizeHandle(annotation, {23, 32}, 5) == ResizeHandle::start);
+    REQUIRE(HitResizeHandle(annotation, {77, 63}, 5) == ResizeHandle::end);
+    REQUIRE(HitResizeHandle(annotation, {50, 45}, 5) == ResizeHandle::none);
+
+    REQUIRE(ResizeAnnotationEndpoint(annotation, ResizeHandle::start, {10, 70}));
+    REQUIRE(annotation.start == PixelPoint{10, 70});
+    REQUIRE(annotation.end == PixelPoint{80, 60});
+    REQUIRE(ResizeAnnotationEndpoint(annotation, ResizeHandle::end, {100, 20}));
+    REQUIRE(annotation.end == PixelPoint{100, 20});
+}
+
+TEST_CASE("Marker resize endpoints update the visible stroke") {
+    Annotation marker{
+        .kind = AnnotationKind::marker,
+        .start = {10, 20},
+        .end = {50, 30},
+        .points = {{10, 20}, {30, 25}, {50, 30}},
+    };
+
+    REQUIRE(ResizeAnnotationEndpoint(marker, ResizeHandle::start, {5, 15}));
+    REQUIRE(marker.start == PixelPoint{5, 15});
+    REQUIRE(marker.points.front() == PixelPoint{5, 15});
+    REQUIRE(ResizeAnnotationEndpoint(marker, ResizeHandle::end, {60, 40}));
+    REQUIRE(marker.end == PixelPoint{60, 40});
+    REQUIRE(marker.points.back() == PixelPoint{60, 40});
+    REQUIRE_FALSE(ResizeAnnotationEndpoint(marker, ResizeHandle::none, {0, 0}));
 }
 
 TEST_CASE("History enforces its configured boundary") {

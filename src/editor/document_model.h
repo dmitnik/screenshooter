@@ -24,6 +24,14 @@ enum class AnnotationKind {
     blur,
 };
 
+enum class ResizeHandle {
+    none,
+    start,
+    end,
+};
+
+struct Annotation;
+
 [[nodiscard]] platform::PixelPoint DefaultArrowStart(
     platform::PixelPoint end,
     platform::PixelRect bounds
@@ -34,6 +42,18 @@ enum class AnnotationKind {
     platform::PixelPoint start,
     platform::PixelPoint end,
     platform::PixelRect bounds
+) noexcept;
+
+[[nodiscard]] ResizeHandle HitResizeHandle(
+    const Annotation& annotation,
+    platform::PixelPoint point,
+    std::int32_t tolerance
+) noexcept;
+
+[[nodiscard]] bool ResizeAnnotationEndpoint(
+    Annotation& annotation,
+    ResizeHandle handle,
+    platform::PixelPoint point
 ) noexcept;
 
 struct Annotation {

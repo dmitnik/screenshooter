@@ -474,6 +474,37 @@ void EditorWindow::Paint() {
             ::SelectObject(dc, old_brush);
             ::SelectObject(dc, old_pen);
             ::DeleteObject(pen);
+
+            const auto to_client = [this, visible_bounds](
+                                       const platform::PixelPoint point) {
+                return POINT{
+                    static_cast<LONG>(std::lround(
+                        offset_x_ + ((point.x - visible_bounds.left) * scale_))),
+                    static_cast<LONG>(std::lround(
+                        offset_y_ + ((point.y - visible_bounds.top) * scale_))),
+                };
+            };
+            const int handle_radius = platform::DipToPixels(
+                5, ::GetDpiForWindow(window_));
+            HBRUSH handle_fill = ::CreateSolidBrush(RGB(255, 255, 255));
+            HBRUSH handle_border = ::CreateSolidBrush(RGB(26, 115, 232));
+            const auto draw_handle = [&](const platform::PixelPoint point) {
+                const POINT client_point = to_client(point);
+                RECT handle{
+                    client_point.x - handle_radius,
+                    client_point.y - handle_radius,
+                    client_point.x + handle_radius + 1,
+                    client_point.y + handle_radius + 1,
+                };
+                ::FillRect(dc, &handle, handle_fill);
+                ::FrameRect(dc, &handle, handle_border);
+            };
+            draw_handle(selected->start);
+            if (selected->end != selected->start) {
+                draw_handle(selected->end);
+            }
+            ::DeleteObject(handle_border);
+            ::DeleteObject(handle_fill);
         }
     }
     const platform::PixelRect full{
@@ -735,27 +766,41 @@ void EditorWindow::BeginDocumentAction(const POINT client_point) {
     last_document_point_ = DocumentPoint(client_point);
     action_anchor_ = last_document_point_;
     action_before_ = session_.model.Snapshot();
-    if (tool_ == Tool::select) {
+    if (tool_ != Tool::crop) {
         if (session_.model.state().selected.has_value()) {
             Annotation* selected = session_.model.Find(*session_.model.state().selected);
-            if (selected != nullptr &&
-                std::abs(last_document_point_.x - selected->end.x) <= 10 &&
-                std::abs(last_document_point_.y - selected->end.y) <= 10) {
+            const int handle_tolerance = std::max(
+                4,
+                static_cast<int>(std::ceil(
+                    platform::DipToPixels(8, ::GetDpiForWindow(window_)) /
+                    std::max(scale_, 0.1F)
+                ))
+            );
+            resize_handle_ = selected != nullptr
+                ? HitResizeHandle(*selected, last_document_point_, handle_tolerance)
+                : ResizeHandle::none;
+            if (selected != nullptr && resize_handle_ != ResizeHandle::none) {
                 active_annotation_ = selected->id;
                 resizing_ = true;
                 ::SetCapture(window_);
+                InvalidateCanvas();
                 return;
             }
         }
         const auto hit = session_.model.HitTest(last_document_point_);
-        session_.model.Select(hit);
         if (hit.has_value()) {
+            session_.model.Select(hit);
             active_annotation_ = *hit;
             dragging_ = true;
             ::SetCapture(window_);
+            InvalidateCanvas();
+            return;
         }
-        InvalidateCanvas();
-        return;
+        if (tool_ == Tool::select) {
+            session_.model.Select(std::nullopt);
+            InvalidateCanvas();
+            return;
+        }
     }
     if (tool_ == Tool::text) {
         BeginTextEdit(client_point);
@@ -832,7 +877,8 @@ void EditorWindow::UpdateDocumentAction(
         session_.model.SetCrop(platform::Normalize(action_anchor_, current));
     } else if (resizing_) {
         if (Annotation* annotation = session_.model.Find(active_annotation_)) {
-            annotation->end = current;
+            static_cast<void>(ResizeAnnotationEndpoint(
+                *annotation, resize_handle_, current));
         }
     } else if (dragging_) {
         const platform::PixelPoint delta{
@@ -882,6 +928,7 @@ void EditorWindow::EndDocumentAction(
     dragging_ = false;
     creating_ = false;
     resizing_ = false;
+    resize_handle_ = ResizeHandle::none;
     const bool completed_crop = crop_drafting_;
     crop_drafting_ = false;
     if (!completed_crop) {
@@ -1196,6 +1243,7 @@ LRESULT EditorWindow::HandleMessage(
             dragging_ = false;
             creating_ = false;
             resizing_ = false;
+            resize_handle_ = ResizeHandle::none;
             crop_drafting_ = false;
             ::ReleaseCapture();
             InvalidateCanvas();

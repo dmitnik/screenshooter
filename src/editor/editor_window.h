@@ -103,6 +103,7 @@ private:
     POINT last_pan_{};
     bool dragging_{};
     bool resizing_{};
+    ResizeHandle resize_handle_{ResizeHandle::none};
     bool crop_drafting_{};
     bool creating_{};
     bool closing_after_export_{};

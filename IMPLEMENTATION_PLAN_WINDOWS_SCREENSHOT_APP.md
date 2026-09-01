@@ -285,8 +285,10 @@ Blur строится через `CLSID_D2D1GaussianBlur` над объедин�
 Каждая `EditorWindow` привязана к своей `DocumentSession` и маршрутизирует Win32
 input только в её активный `IToolController`. Инструмент может менять только
 draft state; подтверждённое изменение выполняется командой DocumentModel.
-Нейтральный `SelectTool` отвечает за hit testing, перемещение, resize handles и
-клавиатурные команды.
+Hit testing существующих annotations выполняется до начала draft любого
+инструмента: попадание выбирает объект и не создаёт новый. Нейтральный
+`SelectTool` дополнительно снимает выбор по пустому месту. Перемещение, две
+endpoint resize handles и клавиатурные команды общие для всех инструментов.
 
 Viewport хранит zoom и pan независимо от документа. Все pointer coordinates
 преобразуются `client px → DIP → document px` один раз на входе. Zoom ограничен

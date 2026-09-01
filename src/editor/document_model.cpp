@@ -61,7 +61,8 @@ bool Hits(const Annotation& annotation, const platform::PixelPoint point) {
         bounds.bottom - kTolerance,
     };
     if (annotation.kind == AnnotationKind::text ||
-        annotation.kind == AnnotationKind::image) {
+        annotation.kind == AnnotationKind::image ||
+        annotation.kind == AnnotationKind::blur) {
         return platform::Contains(outer, point);
     }
     return platform::Contains(outer, point) &&
@@ -166,6 +167,49 @@ platform::PixelPoint ConstrainShapeEnd(
         start.x + (direction_x * side),
         start.y + (direction_y * side),
     };
+}
+
+ResizeHandle HitResizeHandle(
+    const Annotation& annotation,
+    const platform::PixelPoint point,
+    const std::int32_t tolerance
+) noexcept {
+    const auto distance = [point](const platform::PixelPoint handle) {
+        return std::max(
+            std::abs(point.x - handle.x),
+            std::abs(point.y - handle.y)
+        );
+    };
+    const std::int32_t start_distance = distance(annotation.start);
+    const std::int32_t end_distance = distance(annotation.end);
+    if (start_distance <= tolerance && start_distance <= end_distance) {
+        return ResizeHandle::start;
+    }
+    if (end_distance <= tolerance) {
+        return ResizeHandle::end;
+    }
+    return ResizeHandle::none;
+}
+
+bool ResizeAnnotationEndpoint(
+    Annotation& annotation,
+    const ResizeHandle handle,
+    const platform::PixelPoint point
+) noexcept {
+    if (handle == ResizeHandle::none) {
+        return false;
+    }
+    platform::PixelPoint& endpoint = handle == ResizeHandle::start
+        ? annotation.start
+        : annotation.end;
+    endpoint = point;
+    if (annotation.kind == AnnotationKind::marker && !annotation.points.empty()) {
+        platform::PixelPoint& marker_endpoint = handle == ResizeHandle::start
+            ? annotation.points.front()
+            : annotation.points.back();
+        marker_endpoint = point;
+    }
+    return true;
 }
 
 DocumentModel::DocumentModel(capture::PixelBuffer source)
