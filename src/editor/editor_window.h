@@ -46,6 +46,7 @@ private:
     void ZoomAt(POINT client_point, float factor);
     void CopyAndClose();
     void SaveAs();
+    [[nodiscard]] bool SaveToDefaultFolder();
     void InsertImageFile(const wchar_t* path);
     [[nodiscard]] platform::PixelRect VisibleDocumentBounds() const noexcept;
     [[nodiscard]] platform::PixelPoint DocumentPoint(POINT client_point) const noexcept;

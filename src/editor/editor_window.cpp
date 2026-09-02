@@ -4,6 +4,7 @@
 #include "editor/document_renderer.h"
 #include "export/clipboard_service.h"
 #include "export/image_file_service.h"
+#include "export/screenshot_file_name.h"
 #include "platform/dpi.h"
 #include "resource.h"
 #include "settings/settings_store.h"
@@ -11,13 +12,16 @@
 #include <windowsx.h>
 #include <commctrl.h>
 #include <shellapi.h>
+#include <shlobj_core.h>
 #include <shobjidl_core.h>
 #include <wrl/client.h>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <filesystem>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -192,6 +196,22 @@ void FillTranslucentRegions(
     ::SelectObject(source, previous);
     ::DeleteObject(bitmap);
     ::DeleteDC(source);
+}
+
+std::filesystem::path DefaultSaveFolder() {
+    const auto configured = settings::SettingsStore().Load().save_folder;
+    if (!configured.empty()) {
+        return configured;
+    }
+    PWSTR pictures = nullptr;
+    if (FAILED(::SHGetKnownFolderPath(
+            FOLDERID_Pictures, static_cast<KNOWN_FOLDER_FLAG>(0), nullptr, &pictures)) ||
+        pictures == nullptr) {
+        return {};
+    }
+    const std::filesystem::path folder(pictures);
+    ::CoTaskMemFree(pictures);
+    return folder;
 }
 
 }  // namespace
@@ -684,7 +704,7 @@ void EditorWindow::ShowCropActions(const bool visible) const {
     ::ShowWindow(apply_crop_button_, visible ? SW_SHOW : SW_HIDE);
     ::ShowWindow(cancel_crop_button_, visible ? SW_SHOW : SW_HIDE);
     ::EnableWindow(copy_button_, TRUE);
-    ::EnableWindow(save_button_, tool_ == Tool::crop ? FALSE : TRUE);
+    ::EnableWindow(save_button_, TRUE);
 }
 
 void EditorWindow::LayoutCropActions() const {
@@ -829,11 +849,11 @@ void EditorWindow::SaveAs() {
     dialog->SetFileTypes(ARRAYSIZE(filters), filters);
     dialog->SetFileTypeIndex(1);
     dialog->SetDefaultExtension(L"png");
-    const auto configured_folder = settings::SettingsStore().Load().save_folder;
-    if (!configured_folder.empty()) {
+    const auto default_folder = DefaultSaveFolder();
+    if (!default_folder.empty()) {
         Microsoft::WRL::ComPtr<IShellItem> folder;
         if (SUCCEEDED(::SHCreateItemFromParsingName(
-                configured_folder.c_str(), nullptr, IID_PPV_ARGS(&folder)))) {
+                default_folder.c_str(), nullptr, IID_PPV_ARGS(&folder)))) {
             dialog->SetFolder(folder.Get());
         }
     }
@@ -866,6 +886,31 @@ void EditorWindow::SaveAs() {
         ::MessageBoxW(window_, L"Не удалось сохранить изображение.",
             L"Screenshooter", MB_OK | MB_ICONERROR);
     }
+}
+
+bool EditorWindow::SaveToDefaultFolder() {
+    const auto folder = DefaultSaveFolder();
+    if (folder.empty()) {
+        ::MessageBoxW(window_,
+            L"Не удалось определить папку сохранения по умолчанию.",
+            L"Screenshooter", MB_OK | MB_ICONERROR);
+        return false;
+    }
+    std::error_code error;
+    std::filesystem::create_directories(folder, error);
+    const auto path = error
+        ? std::filesystem::path{}
+        : exporting::NextAvailableScreenshotPath(folder, session_.screenshot_name);
+    if (path.empty() || !exporting::ImageFileService::Save(
+            path, DocumentRenderer::Render(session_.model),
+            exporting::ImageFormat::png)) {
+        ::MessageBoxW(window_,
+            L"Не удалось сохранить изображение в папку по умолчанию.",
+            L"Screenshooter", MB_OK | MB_ICONERROR);
+        return false;
+    }
+    session_.model.MarkClean();
+    return true;
 }
 
 void EditorWindow::InsertImageFile(const wchar_t* path) {
@@ -1544,14 +1589,19 @@ LRESULT EditorWindow::HandleMessage(
         return 0;
     case WM_CLOSE:
         CommitTextEdit();
-        if (!closing_after_export_ && session_.model.dirty() &&
-            ::MessageBoxW(
+        if (!closing_after_export_ && session_.model.dirty()) {
+            const int choice = ::MessageBoxW(
                 window_,
-                L"В снимке есть несохранённые изменения. Закрыть окно?",
+                L"Сохранить изменения перед закрытием?",
                 L"Screenshooter",
-                MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2
-            ) != IDYES) {
-            return 0;
+                MB_YESNOCANCEL | MB_ICONQUESTION | MB_DEFBUTTON1
+            );
+            if (choice == IDYES && !SaveToDefaultFolder()) {
+                return 0;
+            }
+            if (choice != IDYES && choice != IDNO) {
+                return 0;
+            }
         }
         ::DestroyWindow(window_);
         return 0;
