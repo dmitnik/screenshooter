@@ -14,6 +14,7 @@ using screenshooter::editor::DefaultArrowStart;
 using screenshooter::editor::HitResizeHandle;
 using screenshooter::editor::ResizeAnnotationEndpoint;
 using screenshooter::editor::ResizeHandle;
+using screenshooter::editor::UpdateMarkerStroke;
 using screenshooter::platform::PixelPoint;
 using screenshooter::platform::PixelRect;
 
@@ -150,6 +151,40 @@ TEST_CASE("Marker is one movable hit-testable object") {
     REQUIRE(model.HitTest(PixelPoint{30, 22}) == id);
     REQUIRE(model.Move(id, PixelPoint{5, 7}));
     REQUIRE(model.Find(id)->points.front() == PixelPoint{15, 27});
+}
+
+TEST_CASE("Shift marker discards freehand points and becomes one straight line") {
+    Annotation marker{
+        .kind = AnnotationKind::marker,
+        .start = {10, 20},
+        .end = {30, 25},
+        .points = {{10, 20}, {20, 30}, {30, 25}},
+    };
+    UpdateMarkerStroke(marker, {70, 45}, true);
+    REQUIRE(marker.end == PixelPoint{70, 45});
+    REQUIRE(marker.points == std::vector<PixelPoint>{{10, 20}, {70, 45}});
+}
+
+TEST_CASE("Transparent marker blends each covered pixel only once") {
+    auto source = CreateOpaqueBuffer(40, 30);
+    for (auto& value : source.pixels) {
+        value = std::byte{0xFF};
+    }
+    DocumentModel model(std::move(source));
+    static_cast<void>(model.Add(Annotation{
+        .kind = AnnotationKind::marker,
+        .start = {5, 15},
+        .end = {35, 15},
+        .color = 0x66FFEB3B,
+        .thickness = 18,
+        .points = {{5, 15}, {20, 15}, {35, 15}},
+    }));
+    const auto rendered = DocumentRenderer::Render(model);
+    const auto* center = rendered.row(15) + (20 * 4);
+    REQUIRE(std::to_integer<unsigned>(center[0]) == 176U);
+    REQUIRE(std::to_integer<unsigned>(center[1]) == 247U);
+    REQUIRE(std::to_integer<unsigned>(center[2]) == 255U);
+    REQUIRE(std::to_integer<unsigned>(center[3]) == 255U);
 }
 
 TEST_CASE("Shape renderer draws a visible arrow and ellipse") {

@@ -117,6 +117,7 @@ private:
     bool crop_selection_ready_{};
     bool crop_release_on_right_{true};
     bool crop_release_on_bottom_{true};
+    bool marker_straight_drafting_{};
     bool creating_{};
     bool closing_after_export_{};
     platform::PixelPoint last_document_point_{};

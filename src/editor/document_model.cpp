@@ -212,6 +212,28 @@ bool ResizeAnnotationEndpoint(
     return true;
 }
 
+void UpdateMarkerStroke(
+    Annotation& annotation,
+    const platform::PixelPoint end,
+    const bool straight
+) {
+    annotation.end = end;
+    if (straight) {
+        annotation.points.clear();
+        annotation.points.push_back(annotation.start);
+        if (end != annotation.start) {
+            annotation.points.push_back(end);
+        }
+        return;
+    }
+    if (annotation.points.empty()) {
+        annotation.points.push_back(annotation.start);
+    }
+    if (annotation.points.back() != end) {
+        annotation.points.push_back(end);
+    }
+}
+
 DocumentModel::DocumentModel(capture::PixelBuffer source)
 {
     state_.source = std::make_shared<const capture::PixelBuffer>(std::move(source));

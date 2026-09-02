@@ -878,10 +878,12 @@ void EditorWindow::ApplyCrop() {
             L"Screenshooter", MB_OK | MB_ICONERROR);
         return;
     }
-    history_.Commit(crop_mode_before_, session_.model.Snapshot());
-    tool_ = Tool::select;
+    const auto applied = session_.model.Snapshot();
+    history_.Commit(crop_mode_before_, applied);
+    crop_mode_before_ = applied;
     fit_ = true;
     crop_selection_ready_ = false;
+    ::SetFocus(window_);
     ShowCropActions(false);
     InvalidateToolButtons();
     InvalidateCanvas();
@@ -1156,6 +1158,7 @@ void EditorWindow::BeginDocumentAction(const POINT client_point) {
         annotation.color = 0x66FFEB3B;
         annotation.thickness = 18;
         annotation.points.push_back(last_document_point_);
+        marker_straight_drafting_ = false;
     }
     active_annotation_ = session_.model.Add(annotation);
     creating_ = true;
@@ -1194,18 +1197,21 @@ void EditorWindow::UpdateDocumentAction(
         };
         static_cast<void>(session_.model.Move(active_annotation_, delta));
     } else if (Annotation* annotation = session_.model.Find(active_annotation_)) {
-        annotation->end = current;
-        if (constrain_geometry) {
+        if (annotation->kind == AnnotationKind::marker) {
+            marker_straight_drafting_ =
+                marker_straight_drafting_ || constrain_geometry;
+            UpdateMarkerStroke(
+                *annotation, current, marker_straight_drafting_);
+        } else {
+            annotation->end = current;
+        }
+        if (constrain_geometry && annotation->kind != AnnotationKind::marker) {
             annotation->end = ConstrainShapeEnd(
                 annotation->kind,
                 annotation->start,
                 annotation->end,
                 VisibleDocumentBounds()
             );
-        }
-        if (annotation->kind == AnnotationKind::marker &&
-            (annotation->points.empty() || annotation->points.back() != current)) {
-            annotation->points.push_back(current);
         }
     }
     last_document_point_ = current;
@@ -1234,6 +1240,7 @@ void EditorWindow::EndDocumentAction(
     ::ReleaseCapture();
     dragging_ = false;
     creating_ = false;
+    marker_straight_drafting_ = false;
     resizing_ = false;
     resize_handle_ = ResizeHandle::none;
     const bool completed_crop = crop_drafting_;

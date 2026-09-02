@@ -56,6 +56,12 @@ struct Annotation;
     platform::PixelPoint point
 ) noexcept;
 
+void UpdateMarkerStroke(
+    Annotation& annotation,
+    platform::PixelPoint end,
+    bool straight
+);
+
 struct Annotation {
     AnnotationId id{};
     AnnotationKind kind{AnnotationKind::rectangle};

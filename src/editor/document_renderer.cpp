@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstring>
 #include <numbers>
+#include <vector>
 
 namespace screenshooter::editor {
 namespace {
@@ -73,6 +74,112 @@ void DrawLine(
         if (doubled <= dx) {
             error += dx;
             start.y += step_y;
+        }
+    }
+}
+
+void MarkDisk(
+    std::vector<std::uint8_t>& coverage,
+    const platform::PixelRect bounds,
+    const std::int32_t center_x,
+    const std::int32_t center_y,
+    const std::int32_t radius
+) {
+    for (std::int32_t y = -radius; y <= radius; ++y) {
+        for (std::int32_t x = -radius; x <= radius; ++x) {
+            if ((x * x) + (y * y) > radius * radius) {
+                continue;
+            }
+            const platform::PixelPoint pixel{center_x + x, center_y + y};
+            if (platform::Contains(bounds, pixel)) {
+                coverage[
+                    static_cast<std::size_t>(pixel.y - bounds.top) *
+                        static_cast<std::size_t>(bounds.width()) +
+                    static_cast<std::size_t>(pixel.x - bounds.left)
+                ] = 1;
+            }
+        }
+    }
+}
+
+void MarkLine(
+    std::vector<std::uint8_t>& coverage,
+    const platform::PixelRect bounds,
+    platform::PixelPoint start,
+    const platform::PixelPoint end,
+    const std::int32_t radius
+) {
+    const std::int32_t dx = std::abs(end.x - start.x);
+    const std::int32_t step_x = start.x < end.x ? 1 : -1;
+    const std::int32_t dy = -std::abs(end.y - start.y);
+    const std::int32_t step_y = start.y < end.y ? 1 : -1;
+    std::int32_t error = dx + dy;
+    while (true) {
+        MarkDisk(coverage, bounds, start.x, start.y, radius);
+        if (start == end) {
+            break;
+        }
+        const std::int32_t doubled = error * 2;
+        if (doubled >= dy) {
+            error += dy;
+            start.x += step_x;
+        }
+        if (doubled <= dx) {
+            error += dx;
+            start.y += step_y;
+        }
+    }
+}
+
+void DrawMarkerStroke(
+    capture::PixelBuffer& image,
+    const Annotation& annotation
+) {
+    if (annotation.points.size() < 2) {
+        return;
+    }
+    const std::int32_t radius = std::max(1, annotation.thickness / 2);
+    platform::PixelRect bounds{
+        annotation.points.front().x,
+        annotation.points.front().y,
+        annotation.points.front().x + 1,
+        annotation.points.front().y + 1,
+    };
+    for (const auto point : annotation.points) {
+        bounds.left = std::min(bounds.left, point.x);
+        bounds.top = std::min(bounds.top, point.y);
+        bounds.right = std::max(bounds.right, point.x + 1);
+        bounds.bottom = std::max(bounds.bottom, point.y + 1);
+    }
+    bounds = platform::Intersect(
+        {
+            bounds.left - radius,
+            bounds.top - radius,
+            bounds.right + radius,
+            bounds.bottom + radius,
+        },
+        {0, 0, image.width, image.height}
+    );
+    if (bounds.empty()) {
+        return;
+    }
+    std::vector<std::uint8_t> coverage(
+        static_cast<std::size_t>(bounds.width()) *
+        static_cast<std::size_t>(bounds.height())
+    );
+    for (std::size_t index = 1; index < annotation.points.size(); ++index) {
+        MarkLine(coverage, bounds, annotation.points[index - 1],
+            annotation.points[index], radius);
+    }
+    for (std::int32_t y = bounds.top; y < bounds.bottom; ++y) {
+        for (std::int32_t x = bounds.left; x < bounds.right; ++x) {
+            const auto index =
+                static_cast<std::size_t>(y - bounds.top) *
+                    static_cast<std::size_t>(bounds.width()) +
+                static_cast<std::size_t>(x - bounds.left);
+            if (coverage[index] != 0) {
+                SetPixel(image, x, y, annotation.color);
+            }
         }
     }
 }
@@ -149,10 +256,7 @@ void DrawAnnotation(capture::PixelBuffer& image, const Annotation& annotation) {
         return;
     }
     if (annotation.kind == AnnotationKind::marker) {
-        for (std::size_t index = 1; index < annotation.points.size(); ++index) {
-            DrawLine(image, annotation.points[index - 1], annotation.points[index],
-                annotation.thickness, annotation.color);
-        }
+        DrawMarkerStroke(image, annotation);
         return;
     }
     if (annotation.kind == AnnotationKind::image && annotation.image != nullptr) {
