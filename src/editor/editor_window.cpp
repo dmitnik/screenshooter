@@ -762,6 +762,7 @@ void EditorWindow::BeginDocumentAction(const POINT client_point) {
     if (!IsCanvasPoint(client_point)) {
         return;
     }
+    ::SetFocus(window_);
     last_document_point_ = DocumentPoint(client_point);
     action_anchor_ = last_document_point_;
     action_before_ = session_.model.Snapshot();
