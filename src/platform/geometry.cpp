@@ -59,4 +59,41 @@ PixelRect FitCenteredRect(
     return {left, top, left + width, top + height};
 }
 
+PixelRect PlaceCropActions(
+    const PixelRect crop,
+    const bool release_on_right,
+    const bool release_on_bottom,
+    const PixelSize action_size,
+    const PixelRect canvas,
+    const std::int32_t gap
+) noexcept {
+    if (canvas.empty() || action_size.width <= 0 || action_size.height <= 0) {
+        return {};
+    }
+
+    const std::int32_t width = std::min(action_size.width, canvas.width());
+    const std::int32_t height = std::min(action_size.height, canvas.height());
+    const std::int32_t preferred_left = release_on_right
+        ? crop.right + gap
+        : crop.left - gap - width;
+    const std::int32_t alternate_left = release_on_right
+        ? crop.left - gap - width
+        : crop.right + gap;
+    const auto fits_horizontally = [canvas, width](const std::int32_t left) {
+        return left >= canvas.left && left + width <= canvas.right;
+    };
+
+    std::int32_t left = preferred_left;
+    if (!fits_horizontally(left) && fits_horizontally(alternate_left)) {
+        left = alternate_left;
+    }
+    left = std::clamp(left, canvas.left, canvas.right - width);
+
+    std::int32_t top = release_on_bottom
+        ? crop.bottom - height
+        : crop.top;
+    top = std::clamp(top, canvas.top, canvas.bottom - height);
+    return {left, top, left + width, top + height};
+}
+
 }  // namespace screenshooter::platform

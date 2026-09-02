@@ -55,7 +55,9 @@ private:
     void EnterCropMode();
     void ApplyCrop();
     void CancelCrop();
+    void ClearCropSelection();
     void ShowCropActions(bool visible) const;
+    void LayoutCropActions() const;
     void BeginDocumentAction(POINT client_point);
     void UpdateDocumentAction(POINT client_point, bool constrain_geometry);
     void EndDocumentAction(POINT client_point, bool constrain_geometry);
@@ -112,6 +114,9 @@ private:
     bool resizing_{};
     ResizeHandle resize_handle_{ResizeHandle::none};
     bool crop_drafting_{};
+    bool crop_selection_ready_{};
+    bool crop_release_on_right_{true};
+    bool crop_release_on_bottom_{true};
     bool creating_{};
     bool closing_after_export_{};
     platform::PixelPoint last_document_point_{};

@@ -6,6 +6,7 @@ using screenshooter::platform::Contains;
 using screenshooter::platform::FitCenteredRect;
 using screenshooter::platform::Intersect;
 using screenshooter::platform::Normalize;
+using screenshooter::platform::PlaceCropActions;
 using screenshooter::platform::PixelPoint;
 using screenshooter::platform::PixelRect;
 using screenshooter::platform::PixelSize;
@@ -54,4 +55,25 @@ TEST_CASE("Editor window shrinks when the work area is below its preferred minim
         PixelSize{1080, 520}, PixelSize{1080, 520}, PixelSize{1440, 900},
         PixelRect{100, 50, 900, 500}
     ) == PixelRect{100, 50, 900, 500});
+}
+
+TEST_CASE("Crop actions follow the bottom-right release corner") {
+    REQUIRE(PlaceCropActions(
+        PixelRect{100, 80, 400, 300}, true, true,
+        PixelSize{198, 34}, PixelRect{0, 0, 900, 600}, 8
+    ) == PixelRect{408, 266, 606, 300});
+}
+
+TEST_CASE("Crop actions follow the top-left release corner") {
+    REQUIRE(PlaceCropActions(
+        PixelRect{300, 140, 700, 500}, false, false,
+        PixelSize{198, 34}, PixelRect{0, 0, 900, 600}, 8
+    ) == PixelRect{94, 140, 292, 174});
+}
+
+TEST_CASE("Crop actions use the opposite side at the canvas edge") {
+    REQUIRE(PlaceCropActions(
+        PixelRect{600, 10, 890, 250}, true, false,
+        PixelSize{198, 34}, PixelRect{0, 0, 900, 600}, 8
+    ) == PixelRect{394, 10, 592, 44});
 }

@@ -40,5 +40,13 @@ struct PixelRect {
     PixelSize maximum,
     PixelRect bounds
 ) noexcept;
+[[nodiscard]] PixelRect PlaceCropActions(
+    PixelRect crop,
+    bool release_on_right,
+    bool release_on_bottom,
+    PixelSize action_size,
+    PixelRect canvas,
+    std::int32_t gap
+) noexcept;
 
 }  // namespace screenshooter::platform

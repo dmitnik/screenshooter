@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.28)
 
 project(
     Screenshooter
-    VERSION 0.1.15
+    VERSION 0.1.16
     DESCRIPTION "Fast native screenshot editor for Windows"
     LANGUAGES CXX RC
 )

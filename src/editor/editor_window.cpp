@@ -40,6 +40,10 @@ constexpr int kApplyCropButton = 3112;
 constexpr int kCancelCropButton = 3113;
 constexpr int kBarHeightDip = 54;
 constexpr int kToolPanelWidthDip = 176;
+constexpr int kCropActionWidthDip = 96;
+constexpr int kCropActionHeightDip = 34;
+constexpr int kCropActionGapDip = 6;
+constexpr int kCropActionOffsetDip = 8;
 constexpr UINT kCommitTextEdit = WM_APP + 20;
 
 void DrawToolGlyph(const HDC dc, const int control_id, const RECT bounds) {
@@ -442,14 +446,7 @@ void EditorWindow::LayoutControls() {
     place_tool(text_button_);
     place_tool(blur_button_);
     place_tool(crop_button_);
-
-    tool_top += platform::DipToPixels(8, dpi);
-    const int crop_gap = platform::DipToPixels(6, dpi);
-    const int crop_action_width = (tool_width - crop_gap) / 2;
-    ::MoveWindow(apply_crop_button_, tool_left, tool_top,
-        crop_action_width, height, TRUE);
-    ::MoveWindow(cancel_crop_button_, tool_left + crop_action_width + crop_gap,
-        tool_top, crop_action_width, height, TRUE);
+    LayoutCropActions();
 }
 
 std::optional<EditorWindow::Tool> EditorWindow::ToolForControlId(
@@ -642,6 +639,7 @@ void EditorWindow::Paint() {
             ((static_cast<float>(canvas.bottom - canvas.top) -
                 (rendered.height * scale_)) / 2.0F);
     }
+    LayoutCropActions();
 
     BITMAPINFO bitmap_info{};
     bitmap_info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -782,8 +780,46 @@ void EditorWindow::ShowCropActions(const bool visible) const {
     ::ShowWindow(apply_crop_button_, visible ? SW_SHOW : SW_HIDE);
     ::ShowWindow(cancel_crop_button_, visible ? SW_SHOW : SW_HIDE);
     ::EnableWindow(copy_button_, TRUE);
-    ::EnableWindow(save_button_, visible ? FALSE : TRUE);
-    ::EnableWindow(share_button_, visible ? FALSE : TRUE);
+    ::EnableWindow(save_button_, tool_ == Tool::crop ? FALSE : TRUE);
+    ::EnableWindow(share_button_, tool_ == Tool::crop ? FALSE : TRUE);
+}
+
+void EditorWindow::LayoutCropActions() const {
+    if (!crop_selection_ready_ || window_ == nullptr) {
+        return;
+    }
+
+    RECT client{};
+    ::GetClientRect(window_, &client);
+    const UINT dpi = ::GetDpiForWindow(window_);
+    const int panel = platform::DipToPixels(kToolPanelWidthDip, dpi);
+    const int bar = platform::DipToPixels(kBarHeightDip, dpi);
+    const int button_width = platform::DipToPixels(kCropActionWidthDip, dpi);
+    const int button_height = platform::DipToPixels(kCropActionHeightDip, dpi);
+    const int button_gap = platform::DipToPixels(kCropActionGapDip, dpi);
+    const int corner_gap = platform::DipToPixels(kCropActionOffsetDip, dpi);
+    const auto crop = session_.model.state().crop;
+    const platform::PixelRect crop_client{
+        static_cast<std::int32_t>(std::lround(offset_x_ + (crop.left * scale_))),
+        static_cast<std::int32_t>(std::lround(offset_y_ + (crop.top * scale_))),
+        static_cast<std::int32_t>(std::lround(offset_x_ + (crop.right * scale_))),
+        static_cast<std::int32_t>(std::lround(offset_y_ + (crop.bottom * scale_))),
+    };
+    const auto actions = platform::PlaceCropActions(
+        crop_client,
+        crop_release_on_right_,
+        crop_release_on_bottom_,
+        platform::PixelSize{button_width * 2 + button_gap, button_height},
+        platform::PixelRect{0, 0, client.right - panel, client.bottom - bar},
+        corner_gap
+    );
+    if (actions.empty()) {
+        return;
+    }
+    ::MoveWindow(apply_crop_button_, actions.left, actions.top,
+        button_width, button_height, TRUE);
+    ::MoveWindow(cancel_crop_button_, actions.left + button_width + button_gap,
+        actions.top, button_width, button_height, TRUE);
 }
 
 void EditorWindow::EnterCropMode() {
@@ -795,7 +831,8 @@ void EditorWindow::EnterCropMode() {
     session_.model.Select(std::nullopt);
     tool_ = Tool::crop;
     fit_ = true;
-    ShowCropActions(true);
+    crop_selection_ready_ = false;
+    ShowCropActions(false);
     InvalidateToolButtons();
     InvalidateCanvas();
 }
@@ -812,6 +849,7 @@ void EditorWindow::ApplyCrop() {
     history_.Commit(crop_mode_before_, session_.model.Snapshot());
     tool_ = Tool::select;
     fit_ = true;
+    crop_selection_ready_ = false;
     ShowCropActions(false);
     InvalidateToolButtons();
     InvalidateCanvas();
@@ -824,8 +862,20 @@ void EditorWindow::CancelCrop() {
     session_.model.Restore(crop_mode_before_);
     tool_ = Tool::select;
     fit_ = true;
+    crop_selection_ready_ = false;
     ShowCropActions(false);
     InvalidateToolButtons();
+    InvalidateCanvas();
+}
+
+void EditorWindow::ClearCropSelection() {
+    if (tool_ != Tool::crop || !crop_selection_ready_) {
+        return;
+    }
+    const auto& source = session_.model.source();
+    session_.model.SetCrop({0, 0, source.width, source.height});
+    crop_selection_ready_ = false;
+    ShowCropActions(false);
     InvalidateCanvas();
 }
 
@@ -836,6 +886,7 @@ void EditorWindow::ZoomAt(const POINT client_point, const float factor) {
     offset_x_ = client_point.x - (document_x * scale_);
     offset_y_ = client_point.y - (document_y * scale_);
     fit_ = false;
+    LayoutCropActions();
     InvalidateCanvas();
 }
 
@@ -1027,6 +1078,10 @@ void EditorWindow::BeginDocumentAction(const POINT client_point) {
         return;
     }
     if (tool_ == Tool::crop) {
+        const auto& source = session_.model.source();
+        session_.model.SetCrop({0, 0, source.width, source.height});
+        crop_selection_ready_ = false;
+        ShowCropActions(false);
         crop_drafting_ = true;
         ::SetCapture(window_);
         return;
@@ -1150,9 +1205,19 @@ void EditorWindow::EndDocumentAction(
     resizing_ = false;
     resize_handle_ = ResizeHandle::none;
     const bool completed_crop = crop_drafting_;
+    if (completed_crop) {
+        const auto crop = platform::Normalize(action_anchor_, last_document_point_);
+        crop_release_on_right_ = last_document_point_.x >= action_anchor_.x;
+        crop_release_on_bottom_ = last_document_point_.y >= action_anchor_.y;
+        crop_selection_ready_ = !crop.empty();
+    }
     crop_drafting_ = false;
     if (!completed_crop) {
         history_.Commit(action_before_, session_.model.Snapshot());
+    }
+    if (completed_crop && crop_selection_ready_) {
+        LayoutCropActions();
+        ShowCropActions(true);
     }
     InvalidateCanvas();
 }
@@ -1485,7 +1550,9 @@ LRESULT EditorWindow::HandleMessage(
         return 0;
     case WM_KEYDOWN:
         if (w_param == VK_ESCAPE) {
-            if (session_.model.state().selected.has_value()) {
+            if (tool_ == Tool::crop && crop_selection_ready_) {
+                ClearCropSelection();
+            } else if (session_.model.state().selected.has_value()) {
                 DeleteSelection();
             } else {
                 ::SendMessageW(window_, WM_CLOSE, 0, 0);
