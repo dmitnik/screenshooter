@@ -38,6 +38,9 @@ private:
     void CreateControls();
     void LayoutControls();
     void Paint();
+    void DrawToolButton(const DRAWITEMSTRUCT& item) const;
+    void InvalidateToolButtons() const;
+    [[nodiscard]] std::optional<Tool> ToolForControlId(int control_id) const noexcept;
     [[nodiscard]] bool EnsurePaintBuffer(HDC reference, int width, int height);
     void ReleasePaintBuffer() noexcept;
     void InvalidateCanvas() const;
@@ -67,6 +70,10 @@ private:
         HWND window, UINT message, WPARAM w_param, LPARAM l_param,
         UINT_PTR subclass_id, DWORD_PTR reference_data
     );
+    static LRESULT CALLBACK ToolButtonProcedure(
+        HWND window, UINT message, WPARAM w_param, LPARAM l_param,
+        UINT_PTR subclass_id, DWORD_PTR reference_data
+    );
     LRESULT HandleMessage(UINT message, WPARAM w_param, LPARAM l_param);
 
     HINSTANCE instance_{};
@@ -87,6 +94,7 @@ private:
     HWND apply_crop_button_{};
     HWND cancel_crop_button_{};
     HWND text_edit_{};
+    HWND hovered_tool_button_{};
     HDC paint_buffer_dc_{};
     HBITMAP paint_buffer_bitmap_{};
     HGDIOBJ paint_buffer_previous_{};
