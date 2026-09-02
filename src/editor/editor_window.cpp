@@ -95,6 +95,16 @@ int ActionIconResourceId(const int control_id) noexcept {
     }
 }
 
+const wchar_t* ActionButtonLabel(const int control_id) noexcept {
+    switch (control_id) {
+    case kCopyButton: return L"Копировать";
+    case kSaveButton: return L"Сохранить";
+    case kApplyCropButton: return L"Применить";
+    case kCancelCropButton: return L"Отмена";
+    default: return L"";
+    }
+}
+
 bool IsActionControlId(const int control_id) noexcept {
     return control_id == kCopyButton || control_id == kSaveButton ||
         control_id == kApplyCropButton || control_id == kCancelCropButton;
@@ -541,8 +551,7 @@ void EditorWindow::DrawActionButton(const DRAWITEMSTRUCT& item) const {
         }
         content.left = icon.right + platform::DipToPixels(6, dpi);
     }
-    wchar_t label[64]{};
-    ::GetWindowTextW(item.hwndItem, label, static_cast<int>(std::size(label)));
+    const wchar_t* label = ActionButtonLabel(static_cast<int>(item.CtlID));
     ::SetBkMode(item.hDC, TRANSPARENT);
     ::SetTextColor(item.hDC, disabled ? RGB(142, 148, 156) : RGB(39, 47, 58));
     HGDIOBJ old_font = ::SelectObject(item.hDC,
@@ -805,6 +814,15 @@ platform::PixelRect EditorWindow::VisibleDocumentBounds() const noexcept {
 void EditorWindow::ShowCropActions(const bool visible) const {
     ::ShowWindow(apply_crop_button_, visible ? SW_SHOW : SW_HIDE);
     ::ShowWindow(cancel_crop_button_, visible ? SW_SHOW : SW_HIDE);
+    if (visible) {
+        const HWND buttons[]{apply_crop_button_, cancel_crop_button_};
+        for (const HWND button : buttons) {
+            ::SetWindowPos(button, HWND_TOP, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            ::RedrawWindow(button, nullptr, nullptr,
+                RDW_INVALIDATE | RDW_ERASE | RDW_UPDATENOW);
+        }
+    }
     ::EnableWindow(copy_button_, TRUE);
     ::EnableWindow(save_button_, TRUE);
 }
