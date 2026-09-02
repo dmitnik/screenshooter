@@ -5,9 +5,19 @@
 
 CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "app.manifest"
 
+IDI_TABLER_POINTER ICON "tabler\\generated\\pointer.ico"
+IDI_TABLER_RECTANGLE ICON "tabler\\generated\\rectangle.ico"
+IDI_TABLER_LINE ICON "tabler\\generated\\line.ico"
+IDI_TABLER_OVAL ICON "tabler\\generated\\oval.ico"
+IDI_TABLER_ARROW_UP_RIGHT ICON "tabler\\generated\\arrow-up-right.ico"
+IDI_TABLER_HIGHLIGHT ICON "tabler\\generated\\highlight.ico"
+IDI_TABLER_LETTER_T ICON "tabler\\generated\\letter-t.ico"
+IDI_TABLER_BLUR ICON "tabler\\generated\\blur.ico"
+IDI_TABLER_CROP ICON "tabler\\generated\\crop.ico"
+
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 0,1,21,0
- PRODUCTVERSION 0,1,21,0
+ FILEVERSION 0,1,22,0
+ PRODUCTVERSION 0,1,22,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS VS_FF_DEBUG
@@ -24,11 +34,11 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "Screenshooter"
             VALUE "FileDescription", "Локальный редактор снимков экрана"
-            VALUE "FileVersion", "0.1.21"
+            VALUE "FileVersion", "0.1.22"
             VALUE "InternalName", "screenshooter"
             VALUE "OriginalFilename", "screenshooter.exe"
             VALUE "ProductName", "Screenshooter"
-            VALUE "ProductVersion", "0.1.21"
+            VALUE "ProductVersion", "0.1.22"
         END
     END
     BLOCK "VarFileInfo"

@@ -5,6 +5,7 @@
 #include "export/clipboard_service.h"
 #include "export/image_file_service.h"
 #include "platform/dpi.h"
+#include "resource.h"
 #include "settings/settings_store.h"
 
 #include <windowsx.h>
@@ -46,161 +47,40 @@ constexpr int kCropActionGapDip = 6;
 constexpr int kCropActionOffsetDip = 8;
 constexpr UINT kCommitTextEdit = WM_APP + 20;
 
-void DrawToolGlyph(const HDC dc, const int control_id, const RECT bounds) {
-    COLORREF color = RGB(51, 102, 204);
-    if (control_id == kRectangleButton || control_id == kArrowButton) {
-        color = RGB(226, 82, 76);
-    } else if (control_id == kLineButton) {
-        color = RGB(126, 87, 194);
-    } else if (control_id == kEllipseButton || control_id == kCropButton) {
-        color = RGB(28, 145, 122);
-    } else if (control_id == kMarkerButton) {
-        color = RGB(239, 169, 18);
-    } else if (control_id == kBlurButton) {
-        color = RGB(48, 130, 196);
-    }
-
-    const DWORD stroke_width = static_cast<DWORD>(std::max(
-        1, platform::DipToPixels(2, ::GetDeviceCaps(dc, LOGPIXELSX))));
-    const LOGBRUSH pen_brush{BS_SOLID, color, 0};
-    HPEN pen = ::ExtCreatePen(
-        PS_GEOMETRIC | PS_SOLID | PS_ENDCAP_ROUND | PS_JOIN_ROUND,
-        stroke_width, &pen_brush, 0, nullptr);
-    HGDIOBJ old_pen = ::SelectObject(dc, pen);
-    HGDIOBJ old_brush = ::SelectObject(dc, ::GetStockObject(HOLLOW_BRUSH));
-    const auto point = [bounds](const double x, const double y) {
-        return POINT{
-            bounds.left + static_cast<LONG>(std::lround(
-                x * static_cast<double>(bounds.right - bounds.left) / 24.0)),
-            bounds.top + static_cast<LONG>(std::lround(
-                y * static_cast<double>(bounds.bottom - bounds.top) / 24.0)),
-        };
-    };
-    const auto move_to = [dc, &point](const double x, const double y) {
-        const POINT target = point(x, y);
-        ::MoveToEx(dc, target.x, target.y, nullptr);
-    };
-    const auto line_to = [dc, &point](const double x, const double y) {
-        const POINT target = point(x, y);
-        ::LineTo(dc, target.x, target.y);
-    };
-    const auto ellipse = [dc, &point](
-                             const double left,
-                             const double top,
-                             const double right,
-                             const double bottom) {
-        const POINT first = point(left, top);
-        const POINT second = point(right, bottom);
-        ::Ellipse(dc, first.x, first.y, second.x, second.y);
-    };
-    const auto bezier_to = [dc, &point](
-                               const double c1x,
-                               const double c1y,
-                               const double c2x,
-                               const double c2y,
-                               const double end_x,
-                               const double end_y) {
-        const POINT curve[]{
-            point(c1x, c1y), point(c2x, c2y), point(end_x, end_y),
-        };
-        ::PolyBezierTo(dc, curve, static_cast<DWORD>(std::size(curve)));
-    };
-
-    // Native rendering of the requested Tabler Icons outline paths (24x24 grid).
+int ToolIconResourceId(const int control_id) noexcept {
     switch (control_id) {
-    case kSelectButton: {
-        move_to(7.904, 17.563);
-        bezier_to(8.15, 18.42, 9.57, 18.55, 10.132, 17.871);
-        line_to(12.222, 14.778);
-        line_to(17.129, 19.685);
-        bezier_to(17.545, 20.101, 18.222, 20.101, 18.638, 19.685);
-        line_to(19.685, 18.638);
-        bezier_to(20.101, 18.222, 20.101, 17.545, 19.685, 17.129);
-        line_to(14.778, 12.222);
-        line_to(17.891, 10.132);
-        bezier_to(18.72, 9.58, 18.45, 8.2, 17.582, 7.904);
-        line_to(4, 4);
-        line_to(7.904, 17.563);
-        break;
+    case kSelectButton: return IDI_TABLER_POINTER;
+    case kRectangleButton: return IDI_TABLER_RECTANGLE;
+    case kLineButton: return IDI_TABLER_LINE;
+    case kEllipseButton: return IDI_TABLER_OVAL;
+    case kArrowButton: return IDI_TABLER_ARROW_UP_RIGHT;
+    case kMarkerButton: return IDI_TABLER_HIGHLIGHT;
+    case kTextButton: return IDI_TABLER_LETTER_T;
+    case kBlurButton: return IDI_TABLER_BLUR;
+    case kCropButton: return IDI_TABLER_CROP;
+    default: return 0;
     }
-    case kRectangleButton: {
-        const POINT first = point(3, 5);
-        const POINT second = point(21, 19);
-        const int radius = std::max(
-            1, static_cast<int>(point(4, 0).x - point(0, 0).x));
-        ::RoundRect(dc, first.x, first.y, second.x, second.y, radius, radius);
-        break;
+}
+
+void DrawToolGlyph(const HDC dc, const int control_id, const RECT bounds) {
+    const int resource_id = ToolIconResourceId(control_id);
+    if (resource_id == 0) {
+        return;
     }
-    case kLineButton:
-        ellipse(4, 16, 8, 20);
-        ellipse(16, 4, 20, 8);
-        move_to(7.5, 16.5);
-        line_to(16.5, 7.5);
-        break;
-    case kEllipseButton:
-        ellipse(6, 3, 18, 21);
-        break;
-    case kArrowButton:
-        move_to(17, 7);
-        line_to(7, 17);
-        move_to(8, 7);
-        line_to(17, 7);
-        line_to(17, 16);
-        break;
-    case kMarkerButton:
-        move_to(3, 19);
-        line_to(7, 19);
-        line_to(17.5, 8.5);
-        bezier_to(19.061, 6.939, 15.061, 2.939, 13.5, 4.5);
-        line_to(3, 15);
-        line_to(3, 19);
-        move_to(12.5, 5.5);
-        line_to(16.5, 9.5);
-        move_to(4.5, 13.5);
-        line_to(8.5, 17.5);
-        move_to(21, 15);
-        line_to(21, 19);
-        line_to(13, 19);
-        line_to(17, 15);
-        line_to(21, 15);
-        break;
-    case kTextButton:
-        move_to(6, 4);
-        line_to(18, 4);
-        move_to(12, 4);
-        line_to(12, 20);
-        break;
-    case kBlurButton:
-        ellipse(3, 3, 21, 21);
-        move_to(12, 3);
-        line_to(12, 20);
-        move_to(12, 12);
-        line_to(21, 12);
-        move_to(12, 9);
-        line_to(20, 9);
-        move_to(12, 6);
-        line_to(18, 6);
-        move_to(12, 18);
-        line_to(18, 18);
-        move_to(12, 15);
-        line_to(20, 15);
-        break;
-    case kCropButton:
-        move_to(8, 5);
-        line_to(8, 15);
-        bezier_to(8, 15.552, 8.448, 16, 9, 16);
-        line_to(19, 16);
-        move_to(5, 8);
-        line_to(15, 8);
-        bezier_to(15.552, 8, 16, 8.448, 16, 9);
-        line_to(16, 19);
-        break;
-    default:
-        break;
+    const int width = bounds.right - bounds.left;
+    const int height = bounds.bottom - bounds.top;
+    const HICON icon = reinterpret_cast<HICON>(::LoadImageW(
+        ::GetModuleHandleW(nullptr),
+        MAKEINTRESOURCEW(resource_id),
+        IMAGE_ICON,
+        width,
+        height,
+        LR_DEFAULTCOLOR | LR_SHARED
+    ));
+    if (icon != nullptr) {
+        ::DrawIconEx(dc, bounds.left, bounds.top, icon, width, height,
+            0, nullptr, DI_NORMAL);
     }
-    ::SelectObject(dc, old_brush);
-    ::SelectObject(dc, old_pen);
-    ::DeleteObject(pen);
 }
 
 bool RegisterEditorClass(const HINSTANCE instance) {

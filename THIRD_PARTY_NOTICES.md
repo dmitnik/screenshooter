@@ -2,9 +2,10 @@
 
 ## Tabler Icons
 
-The editor toolbar uses native adaptations of these Tabler Icons outline
-glyphs: `pointer`, `rectangle`, `line`, `oval`, `arrow-up-right`, `highlight`,
-`letter-t`, `blur`, and `crop`.
+The editor toolbar uses the official SVG path data from Tabler Icons v3.46.0
+for these outline glyphs: `pointer`, `rectangle`, `line`, `oval`,
+`arrow-up-right`, `highlight`, `letter-t`, `blur`, and `crop`. The bundled ICO
+resources are deterministically rasterized from the included SVG sources.
 
 MIT License
 
