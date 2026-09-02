@@ -18,8 +18,8 @@ IDI_TABLER_COPY ICON "tabler\\generated\\copy.ico"
 IDI_TABLER_DEVICE_FLOPPY ICON "tabler\\generated\\device-floppy.ico"
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 0,1,25,0
- PRODUCTVERSION 0,1,25,0
+ FILEVERSION 0,1,26,0
+ PRODUCTVERSION 0,1,26,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS VS_FF_DEBUG
@@ -36,11 +36,11 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "Screenshooter"
             VALUE "FileDescription", "Локальный редактор снимков экрана"
-            VALUE "FileVersion", "0.1.25"
+            VALUE "FileVersion", "0.1.26"
             VALUE "InternalName", "screenshooter"
             VALUE "OriginalFilename", "screenshooter.exe"
             VALUE "ProductName", "Screenshooter"
-            VALUE "ProductVersion", "0.1.25"
+            VALUE "ProductVersion", "0.1.26"
         END
     END
     BLOCK "VarFileInfo"

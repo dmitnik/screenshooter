@@ -6,6 +6,7 @@
 #include "export/image_file_service.h"
 #include "export/screenshot_file_name.h"
 #include "platform/dpi.h"
+#include "platform/explorer_service.h"
 #include "resource.h"
 #include "settings/settings_store.h"
 
@@ -979,12 +980,12 @@ void EditorWindow::SaveAs() {
     const auto format = file_type == 2
         ? exporting::ImageFormat::jpeg
         : exporting::ImageFormat::png;
-    const bool saved = exporting::ImageFileService::Save(path, rendered, format);
+    const std::filesystem::path saved_path(path);
+    const bool saved = exporting::ImageFileService::Save(saved_path, rendered, format);
     ::CoTaskMemFree(path);
     if (saved) {
         session_.model.MarkClean();
-        ::MessageBoxW(window_, L"Изображение сохранено.",
-            L"Screenshooter", MB_OK | MB_ICONINFORMATION);
+        static_cast<void>(platform::RevealFileInExplorer(saved_path));
     } else {
         ::MessageBoxW(window_, L"Не удалось сохранить изображение.",
             L"Screenshooter", MB_OK | MB_ICONERROR);
@@ -1013,6 +1014,7 @@ bool EditorWindow::SaveToDefaultFolder() {
         return false;
     }
     session_.model.MarkClean();
+    static_cast<void>(platform::RevealFileInExplorer(path));
     return true;
 }
 

@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.28)
 
 project(
     Screenshooter
-    VERSION 0.1.25
+    VERSION 0.1.26
     DESCRIPTION "Fast native screenshot editor for Windows"
     LANGUAGES CXX RC
 )
@@ -23,6 +23,7 @@ add_library(screenshooter_core STATIC
     src/export/screenshot_file_name.cpp
     src/export/share_service.cpp
     src/platform/dpi.cpp
+    src/platform/explorer_service.cpp
     src/platform/geometry.cpp
     src/performance/metrics.cpp
     src/settings/settings_store.cpp
@@ -36,6 +37,8 @@ target_link_libraries(screenshooter_core PUBLIC
     gdi32
     msimg32
     ole32
+    oleaut32
+    shell32
     shlwapi
     user32
     windowscodecs
