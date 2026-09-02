@@ -345,6 +345,7 @@ bool EditorWindow::CreateNativeWindow() {
     }
     ::SetWindowDisplayAffinity(window_, WDA_EXCLUDEFROMCAPTURE);
     CreateControls();
+    EnterCropMode();
     LayoutControls();
     ActivateEditorWindow(window_);
     ::UpdateWindow(window_);
