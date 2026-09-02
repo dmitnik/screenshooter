@@ -86,6 +86,32 @@ void DrawToolGlyph(const HDC dc, const int control_id, const RECT bounds) {
     }
 }
 
+int ActionIconResourceId(const int control_id) noexcept {
+    switch (control_id) {
+    case kCopyButton: return IDI_TABLER_COPY;
+    case kSaveButton: return IDI_TABLER_DEVICE_FLOPPY;
+    default: return 0;
+    }
+}
+
+bool IsActionControlId(const int control_id) noexcept {
+    return control_id == kCopyButton || control_id == kSaveButton ||
+        control_id == kApplyCropButton || control_id == kCancelCropButton;
+}
+
+void SetRoundedButtonRegion(
+    const HWND button,
+    const int width,
+    const int height,
+    const UINT dpi
+) {
+    const int radius = platform::DipToPixels(7, dpi);
+    HRGN region = ::CreateRoundRectRgn(0, 0, width + 1, height + 1, radius, radius);
+    if (region != nullptr && ::SetWindowRgn(button, region, TRUE) == 0) {
+        ::DeleteObject(region);
+    }
+}
+
 bool RegisterEditorClass(const HINSTANCE instance) {
     WNDCLASSEXW window_class{
         .cbSize = sizeof(WNDCLASSEXW),
@@ -314,21 +340,30 @@ void EditorWindow::CreateControls() {
     crop_button_ = create_tool(L"Обрезать", kCropButton);
     select_button_ = create_tool(L"Выбор", kSelectButton);
     apply_crop_button_ = ::CreateWindowExW(
-        0, L"BUTTON", L"Применить", WS_CHILD | BS_DEFPUSHBUTTON,
+        0, L"BUTTON", L"Применить", WS_CHILD | BS_OWNERDRAW,
         0, 0, 0, 0, window_,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kApplyCropButton)), instance_, nullptr);
     cancel_crop_button_ = ::CreateWindowExW(
-        0, L"BUTTON", L"Отмена", WS_CHILD | BS_PUSHBUTTON,
+        0, L"BUTTON", L"Отмена", WS_CHILD | BS_OWNERDRAW,
         0, 0, 0, 0, window_,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCancelCropButton)), instance_, nullptr);
     copy_button_ = ::CreateWindowExW(
-        0, L"BUTTON", L"Копировать", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        0, L"BUTTON", L"Копировать", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
         0, 0, 0, 0, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCopyButton)),
         instance_, nullptr);
     save_button_ = ::CreateWindowExW(
-        0, L"BUTTON", L"Сохранить", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        0, L"BUTTON", L"Сохранить", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
         0, 0, 0, 0, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSaveButton)),
         instance_, nullptr);
+    const HWND action_buttons[]{
+        apply_crop_button_, cancel_crop_button_, copy_button_, save_button_,
+    };
+    for (const HWND button : action_buttons) {
+        ::SetWindowSubclass(button, &EditorWindow::ToolButtonProcedure, 1,
+            reinterpret_cast<DWORD_PTR>(this));
+        ::SendMessageW(button, WM_SETFONT,
+            reinterpret_cast<WPARAM>(::GetStockObject(DEFAULT_GUI_FONT)), TRUE);
+    }
     ::EnableWindow(save_button_, TRUE);
     ::DragAcceptFiles(window_, TRUE);
 }
@@ -340,6 +375,7 @@ void EditorWindow::LayoutControls() {
     RECT client{};
     ::GetClientRect(window_, &client);
     const UINT dpi = ::GetDpiForWindow(window_);
+    const int bar = platform::DipToPixels(kBarHeightDip, dpi);
     const int panel = platform::DipToPixels(kToolPanelWidthDip, dpi);
     const int panel_inset = platform::DipToPixels(8, dpi);
     const int tool_height = platform::DipToPixels(40, dpi);
@@ -364,12 +400,14 @@ void EditorWindow::LayoutControls() {
     const int action_height = platform::DipToPixels(34, dpi);
     const int action_gap = platform::DipToPixels(8, dpi);
     const int action_width = panel - (panel_inset * 2);
-    const int save_top = client.bottom - panel_inset - action_height;
+    const int save_top = client.bottom - bar - action_height;
     const int copy_top = save_top - action_gap - action_height;
     ::MoveWindow(copy_button_, tool_left, copy_top,
         action_width, action_height, TRUE);
     ::MoveWindow(save_button_, tool_left, save_top,
         action_width, action_height, TRUE);
+    SetRoundedButtonRegion(copy_button_, action_width, action_height, dpi);
+    SetRoundedButtonRegion(save_button_, action_width, action_height, dpi);
     LayoutCropActions();
 }
 
@@ -403,7 +441,7 @@ void EditorWindow::InvalidateToolButtons() const {
 void EditorWindow::DrawToolButton(const DRAWITEMSTRUCT& item) const {
     const auto item_tool = ToolForControlId(static_cast<int>(item.CtlID));
     const bool active = item_tool.has_value() && *item_tool == tool_;
-    const bool hovered = item.hwndItem == hovered_tool_button_;
+    const bool hovered = item.hwndItem == hovered_button_;
     COLORREF background = RGB(248, 249, 251);
     if ((item.itemState & ODS_SELECTED) != 0) {
         background = RGB(199, 222, 248);
@@ -452,6 +490,69 @@ void EditorWindow::DrawToolButton(const DRAWITEMSTRUCT& item) const {
     if ((item.itemState & ODS_FOCUS) != 0) {
         RECT focus = item.rcItem;
         ::InflateRect(&focus, -3, -3);
+        ::DrawFocusRect(item.hDC, &focus);
+    }
+}
+
+void EditorWindow::DrawActionButton(const DRAWITEMSTRUCT& item) const {
+    const UINT dpi = ::GetDpiForWindow(window_);
+    const bool pressed = (item.itemState & ODS_SELECTED) != 0;
+    const bool disabled = (item.itemState & ODS_DISABLED) != 0;
+    const bool hovered = item.hwndItem == hovered_button_;
+    COLORREF background = RGB(248, 249, 251);
+    if (pressed) {
+        background = RGB(213, 225, 238);
+    } else if (hovered && !disabled) {
+        background = RGB(232, 242, 253);
+    }
+    const COLORREF border = disabled ? RGB(215, 219, 224) : RGB(190, 198, 207);
+    HBRUSH brush = ::CreateSolidBrush(background);
+    HPEN pen = ::CreatePen(PS_SOLID, 1, border);
+    HGDIOBJ old_brush = ::SelectObject(item.hDC, brush);
+    HGDIOBJ old_pen = ::SelectObject(item.hDC, pen);
+    const int radius = platform::DipToPixels(7, dpi);
+    ::RoundRect(item.hDC, item.rcItem.left, item.rcItem.top,
+        item.rcItem.right, item.rcItem.bottom, radius, radius);
+    ::SelectObject(item.hDC, old_pen);
+    ::SelectObject(item.hDC, old_brush);
+    ::DeleteObject(pen);
+    ::DeleteObject(brush);
+
+    RECT content = item.rcItem;
+    if (pressed) {
+        ::OffsetRect(&content, 0, platform::DipToPixels(1, dpi));
+    }
+    const int resource_id = ActionIconResourceId(static_cast<int>(item.CtlID));
+    if (resource_id != 0) {
+        const int icon_size = platform::DipToPixels(20, dpi);
+        RECT icon{
+            content.left + platform::DipToPixels(10, dpi),
+            content.top + ((content.bottom - content.top - icon_size) / 2),
+            content.left + platform::DipToPixels(10, dpi) + icon_size,
+            content.top + ((content.bottom - content.top + icon_size) / 2),
+        };
+        const HICON glyph = reinterpret_cast<HICON>(::LoadImageW(
+            instance_, MAKEINTRESOURCEW(resource_id), IMAGE_ICON,
+            icon_size, icon_size, LR_DEFAULTCOLOR | LR_SHARED));
+        if (glyph != nullptr) {
+            ::DrawIconEx(item.hDC, icon.left, icon.top, glyph,
+                icon_size, icon_size, 0, nullptr, DI_NORMAL);
+        }
+        content.left = icon.right + platform::DipToPixels(6, dpi);
+    }
+    wchar_t label[64]{};
+    ::GetWindowTextW(item.hwndItem, label, static_cast<int>(std::size(label)));
+    ::SetBkMode(item.hDC, TRANSPARENT);
+    ::SetTextColor(item.hDC, disabled ? RGB(142, 148, 156) : RGB(39, 47, 58));
+    HGDIOBJ old_font = ::SelectObject(item.hDC,
+        reinterpret_cast<HFONT>(::SendMessageW(item.hwndItem, WM_GETFONT, 0, 0)));
+    ::DrawTextW(item.hDC, label, -1, &content,
+        (resource_id == 0 ? DT_CENTER : DT_LEFT) |
+        DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    ::SelectObject(item.hDC, old_font);
+    if ((item.itemState & ODS_FOCUS) != 0) {
+        RECT focus = item.rcItem;
+        ::InflateRect(&focus, -4, -4);
         ::DrawFocusRect(item.hDC, &focus);
     }
 }
@@ -522,11 +623,11 @@ void EditorWindow::Paint() {
     HBRUSH canvas_brush = ::CreateSolidBrush(RGB(205, 216, 230));
     ::FillRect(dc, &canvas, canvas_brush);
     ::DeleteObject(canvas_brush);
-    RECT bar_rect{client.left, canvas.bottom, canvas.right, client.bottom};
+    RECT bar_rect{client.left, canvas.bottom, client.right, client.bottom};
     HBRUSH bar_brush = ::CreateSolidBrush(RGB(248, 249, 251));
     ::FillRect(dc, &bar_rect, bar_brush);
     ::DeleteObject(bar_brush);
-    RECT panel_rect{canvas.right, client.top, client.right, client.bottom};
+    RECT panel_rect{canvas.right, client.top, client.right, canvas.bottom};
     HBRUSH panel_brush = ::CreateSolidBrush(RGB(248, 249, 251));
     ::FillRect(dc, &panel_rect, panel_brush);
     ::DeleteObject(panel_brush);
@@ -743,6 +844,8 @@ void EditorWindow::LayoutCropActions() const {
         button_width, button_height, TRUE);
     ::MoveWindow(cancel_crop_button_, actions.left + button_width + button_gap,
         actions.top, button_width, button_height, TRUE);
+    SetRoundedButtonRegion(apply_crop_button_, button_width, button_height, dpi);
+    SetRoundedButtonRegion(cancel_crop_button_, button_width, button_height, dpi);
 }
 
 void EditorWindow::EnterCropMode() {
@@ -1338,9 +1441,9 @@ LRESULT CALLBACK EditorWindow::ToolButtonProcedure(
 ) {
     auto* editor = reinterpret_cast<EditorWindow*>(reference_data);
     if (message == WM_MOUSEMOVE) {
-        if (editor->hovered_tool_button_ != window) {
-            const HWND previous = editor->hovered_tool_button_;
-            editor->hovered_tool_button_ = window;
+        if (editor->hovered_button_ != window) {
+            const HWND previous = editor->hovered_button_;
+            editor->hovered_button_ = window;
             if (previous != nullptr) {
                 ::InvalidateRect(previous, nullptr, FALSE);
             }
@@ -1353,15 +1456,15 @@ LRESULT CALLBACK EditorWindow::ToolButtonProcedure(
         };
         ::TrackMouseEvent(&tracking);
     } else if (message == WM_MOUSELEAVE) {
-        if (editor->hovered_tool_button_ == window) {
-            editor->hovered_tool_button_ = nullptr;
+        if (editor->hovered_button_ == window) {
+            editor->hovered_button_ = nullptr;
             ::InvalidateRect(window, nullptr, FALSE);
         }
     } else if (message == WM_SETCURSOR) {
         ::SetCursor(::LoadCursorW(nullptr, IDC_HAND));
         return TRUE;
-    } else if (message == WM_NCDESTROY && editor->hovered_tool_button_ == window) {
-        editor->hovered_tool_button_ = nullptr;
+    } else if (message == WM_NCDESTROY && editor->hovered_button_ == window) {
+        editor->hovered_button_ = nullptr;
     }
     return ::DefSubclassProc(window, message, w_param, l_param);
 }
@@ -1396,6 +1499,11 @@ LRESULT EditorWindow::HandleMessage(
         if (const auto* item = reinterpret_cast<const DRAWITEMSTRUCT*>(l_param);
             item != nullptr && ToolForControlId(static_cast<int>(item->CtlID)).has_value()) {
             DrawToolButton(*item);
+            return TRUE;
+        }
+        if (const auto* item = reinterpret_cast<const DRAWITEMSTRUCT*>(l_param);
+            item != nullptr && IsActionControlId(static_cast<int>(item->CtlID))) {
+            DrawActionButton(*item);
             return TRUE;
         }
         return ::DefWindowProcW(window_, message, w_param, l_param);

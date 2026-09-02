@@ -38,6 +38,7 @@ private:
     void LayoutControls();
     void Paint();
     void DrawToolButton(const DRAWITEMSTRUCT& item) const;
+    void DrawActionButton(const DRAWITEMSTRUCT& item) const;
     void InvalidateToolButtons() const;
     [[nodiscard]] std::optional<Tool> ToolForControlId(int control_id) const noexcept;
     [[nodiscard]] bool EnsurePaintBuffer(HDC reference, int width, int height);
@@ -94,7 +95,7 @@ private:
     HWND apply_crop_button_{};
     HWND cancel_crop_button_{};
     HWND text_edit_{};
-    HWND hovered_tool_button_{};
+    HWND hovered_button_{};
     HDC paint_buffer_dc_{};
     HBITMAP paint_buffer_bitmap_{};
     HGDIOBJ paint_buffer_previous_{};

@@ -4,7 +4,7 @@
       name="Screenshooter"
       processorArchitecture="amd64"
       type="win32"
-      version="0.1.24.0" />
+      version="0.1.25.0" />
 
   <description>Screenshooter</description>
 

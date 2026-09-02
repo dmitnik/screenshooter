@@ -27,6 +27,8 @@ $icons = [ordered]@{
     'letter-t'       = [Drawing.Color]::FromArgb(51, 102, 204)
     'blur'           = [Drawing.Color]::FromArgb(48, 130, 196)
     'crop'           = [Drawing.Color]::FromArgb(28, 145, 122)
+    'copy'           = [Drawing.Color]::FromArgb(51, 102, 204)
+    'device-floppy'  = [Drawing.Color]::FromArgb(28, 145, 122)
 }
 $sizes = @(20, 25, 30, 40)
 
