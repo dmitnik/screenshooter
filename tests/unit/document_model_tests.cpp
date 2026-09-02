@@ -161,8 +161,8 @@ TEST_CASE("Shift marker discards freehand points and becomes one straight line")
         .points = {{10, 20}, {20, 30}, {30, 25}},
     };
     UpdateMarkerStroke(marker, {70, 45}, true);
-    REQUIRE(marker.end == PixelPoint{70, 45});
-    REQUIRE(marker.points == std::vector<PixelPoint>{{10, 20}, {70, 45}});
+    REQUIRE(marker.end == PixelPoint{70, 20});
+    REQUIRE(marker.points == std::vector<PixelPoint>{{10, 20}, {70, 20}});
 }
 
 TEST_CASE("Transparent marker blends each covered pixel only once") {
@@ -202,6 +202,30 @@ TEST_CASE("Shape renderer draws a visible arrow and ellipse") {
     const auto rendered = DocumentRenderer::Render(model);
     REQUIRE(rendered != model.source());
     REQUIRE(std::to_integer<unsigned>(rendered.row(10)[40 * 4 + 2]) > 0U);
+}
+
+TEST_CASE("Shape strokes antialias their diagonal edges") {
+    DocumentModel model(CreateOpaqueBuffer(80, 60));
+    static_cast<void>(model.Add(Annotation{
+        .kind = AnnotationKind::arrow,
+        .start = {10, 10},
+        .end = {60, 37},
+        .color = 0xFFFF0000,
+        .thickness = 4,
+    }));
+    const auto rendered = DocumentRenderer::Render(model);
+    bool found_solid = false;
+    bool found_antialiased_edge = false;
+    for (std::int32_t y = 0; y < rendered.height; ++y) {
+        for (std::int32_t x = 0; x < rendered.width; ++x) {
+            const auto red = std::to_integer<unsigned>(rendered.row(y)[x * 4 + 2]);
+            found_solid = found_solid || red == 0xFFU;
+            found_antialiased_edge = found_antialiased_edge ||
+                (red > 0U && red < 0xFFU);
+        }
+    }
+    REQUIRE(found_solid);
+    REQUIRE(found_antialiased_edge);
 }
 
 TEST_CASE("Default click arrow keeps its tip and places a short tail behind it") {

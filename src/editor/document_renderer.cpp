@@ -32,131 +32,145 @@ void SetPixel(
     pixel[3] = std::byte{0xFF};
 }
 
-void DrawDisk(
+void BlendPixelCoverage(
     capture::PixelBuffer& image,
-    const std::int32_t center_x,
-    const std::int32_t center_y,
-    const std::int32_t radius,
+    const std::int32_t x,
+    const std::int32_t y,
+    const std::uint32_t color,
+    const std::uint8_t coverage
+) {
+    const std::uint32_t color_alpha = (color >> 24U) & 0xFFU;
+    const std::uint32_t alpha = (color_alpha * coverage + 127U) / 255U;
+    SetPixel(image, x, y, (color & 0x00FFFFFFU) | (alpha << 24U));
+}
+
+double DistanceToSegment(
+    const double x,
+    const double y,
+    const platform::PixelPoint start,
+    const platform::PixelPoint end
+) noexcept {
+    const double dx = static_cast<double>(end.x - start.x);
+    const double dy = static_cast<double>(end.y - start.y);
+    const double length_squared = (dx * dx) + (dy * dy);
+    if (length_squared == 0.0) {
+        return std::hypot(x - start.x, y - start.y);
+    }
+    const double projection = std::clamp(
+        (((x - start.x) * dx) + ((y - start.y) * dy)) / length_squared,
+        0.0,
+        1.0
+    );
+    return std::hypot(
+        x - (start.x + (projection * dx)),
+        y - (start.y + (projection * dy))
+    );
+}
+
+platform::PixelRect SegmentBounds(
+    const platform::PixelPoint start,
+    const platform::PixelPoint end,
+    const double radius,
+    const platform::PixelRect clip
+) noexcept {
+    const auto margin = static_cast<std::int32_t>(std::ceil(radius + 1.0));
+    return platform::Intersect(
+        {
+            std::min(start.x, end.x) - margin,
+            std::min(start.y, end.y) - margin,
+            std::max(start.x, end.x) + margin + 1,
+            std::max(start.y, end.y) + margin + 1,
+        },
+        clip
+    );
+}
+
+void DrawAntialiasedSegment(
+    capture::PixelBuffer& image,
+    const platform::PixelPoint start,
+    const platform::PixelPoint end,
+    const double radius,
     const std::uint32_t color
 ) {
-    for (std::int32_t y = -radius; y <= radius; ++y) {
-        for (std::int32_t x = -radius; x <= radius; ++x) {
-            if ((x * x) + (y * y) <= radius * radius) {
-                SetPixel(image, center_x + x, center_y + y, color);
+    const auto bounds = SegmentBounds(
+        start, end, radius, {0, 0, image.width, image.height});
+    for (std::int32_t y = bounds.top; y < bounds.bottom; ++y) {
+        for (std::int32_t x = bounds.left; x < bounds.right; ++x) {
+            const double amount = std::clamp(
+                radius + 0.5 - DistanceToSegment(x, y, start, end),
+                0.0,
+                1.0
+            );
+            const auto coverage = static_cast<std::uint8_t>(
+                std::lround(amount * 255.0));
+            if (coverage != 0U) {
+                BlendPixelCoverage(image, x, y, color, coverage);
             }
         }
     }
 }
 
-void DrawLine(
-    capture::PixelBuffer& image,
-    platform::PixelPoint start,
+void MarkAntialiasedSegment(
+    std::vector<std::uint8_t>& coverage,
+    const platform::PixelRect bounds,
+    const platform::PixelPoint start,
     const platform::PixelPoint end,
+    const double radius
+) {
+    const auto segment_bounds = SegmentBounds(start, end, radius, bounds);
+    for (std::int32_t y = segment_bounds.top; y < segment_bounds.bottom; ++y) {
+        for (std::int32_t x = segment_bounds.left; x < segment_bounds.right; ++x) {
+            const double amount = std::clamp(
+                radius + 0.5 - DistanceToSegment(x, y, start, end),
+                0.0,
+                1.0
+            );
+            const auto value = static_cast<std::uint8_t>(std::lround(amount * 255.0));
+            const auto index =
+                static_cast<std::size_t>(y - bounds.top) *
+                    static_cast<std::size_t>(bounds.width()) +
+                static_cast<std::size_t>(x - bounds.left);
+            coverage[index] = std::max(coverage[index], value);
+        }
+    }
+}
+
+void DrawStroke(
+    capture::PixelBuffer& image,
+    const std::vector<platform::PixelPoint>& points,
     const std::int32_t thickness,
     const std::uint32_t color
 ) {
-    const std::int32_t dx = std::abs(end.x - start.x);
-    const std::int32_t step_x = start.x < end.x ? 1 : -1;
-    const std::int32_t dy = -std::abs(end.y - start.y);
-    const std::int32_t step_y = start.y < end.y ? 1 : -1;
-    std::int32_t error = dx + dy;
-    const std::int32_t radius = std::max(1, thickness / 2);
-    while (true) {
-        DrawDisk(image, start.x, start.y, radius, color);
-        if (start == end) {
-            break;
-        }
-        const std::int32_t doubled = error * 2;
-        if (doubled >= dy) {
-            error += dy;
-            start.x += step_x;
-        }
-        if (doubled <= dx) {
-            error += dx;
-            start.y += step_y;
-        }
-    }
-}
-
-void MarkDisk(
-    std::vector<std::uint8_t>& coverage,
-    const platform::PixelRect bounds,
-    const std::int32_t center_x,
-    const std::int32_t center_y,
-    const std::int32_t radius
-) {
-    for (std::int32_t y = -radius; y <= radius; ++y) {
-        for (std::int32_t x = -radius; x <= radius; ++x) {
-            if ((x * x) + (y * y) > radius * radius) {
-                continue;
-            }
-            const platform::PixelPoint pixel{center_x + x, center_y + y};
-            if (platform::Contains(bounds, pixel)) {
-                coverage[
-                    static_cast<std::size_t>(pixel.y - bounds.top) *
-                        static_cast<std::size_t>(bounds.width()) +
-                    static_cast<std::size_t>(pixel.x - bounds.left)
-                ] = 1;
-            }
-        }
-    }
-}
-
-void MarkLine(
-    std::vector<std::uint8_t>& coverage,
-    const platform::PixelRect bounds,
-    platform::PixelPoint start,
-    const platform::PixelPoint end,
-    const std::int32_t radius
-) {
-    const std::int32_t dx = std::abs(end.x - start.x);
-    const std::int32_t step_x = start.x < end.x ? 1 : -1;
-    const std::int32_t dy = -std::abs(end.y - start.y);
-    const std::int32_t step_y = start.y < end.y ? 1 : -1;
-    std::int32_t error = dx + dy;
-    while (true) {
-        MarkDisk(coverage, bounds, start.x, start.y, radius);
-        if (start == end) {
-            break;
-        }
-        const std::int32_t doubled = error * 2;
-        if (doubled >= dy) {
-            error += dy;
-            start.x += step_x;
-        }
-        if (doubled <= dx) {
-            error += dx;
-            start.y += step_y;
-        }
-    }
-}
-
-void DrawMarkerStroke(
-    capture::PixelBuffer& image,
-    const Annotation& annotation
-) {
-    if (annotation.points.size() < 2) {
+    if (points.size() < 2) {
         return;
     }
-    const std::int32_t radius = std::max(1, annotation.thickness / 2);
+    const double radius = std::max(0.5, thickness / 2.0);
+    if (((color >> 24U) & 0xFFU) == 0xFFU) {
+        for (std::size_t index = 1; index < points.size(); ++index) {
+            DrawAntialiasedSegment(
+                image, points[index - 1], points[index], radius, color);
+        }
+        return;
+    }
     platform::PixelRect bounds{
-        annotation.points.front().x,
-        annotation.points.front().y,
-        annotation.points.front().x + 1,
-        annotation.points.front().y + 1,
+        points.front().x,
+        points.front().y,
+        points.front().x + 1,
+        points.front().y + 1,
     };
-    for (const auto point : annotation.points) {
+    for (const auto point : points) {
         bounds.left = std::min(bounds.left, point.x);
         bounds.top = std::min(bounds.top, point.y);
         bounds.right = std::max(bounds.right, point.x + 1);
         bounds.bottom = std::max(bounds.bottom, point.y + 1);
     }
+    const auto margin = static_cast<std::int32_t>(std::ceil(radius + 1.0));
     bounds = platform::Intersect(
         {
-            bounds.left - radius,
-            bounds.top - radius,
-            bounds.right + radius,
-            bounds.bottom + radius,
+            bounds.left - margin,
+            bounds.top - margin,
+            bounds.right + margin,
+            bounds.bottom + margin,
         },
         {0, 0, image.width, image.height}
     );
@@ -167,9 +181,9 @@ void DrawMarkerStroke(
         static_cast<std::size_t>(bounds.width()) *
         static_cast<std::size_t>(bounds.height())
     );
-    for (std::size_t index = 1; index < annotation.points.size(); ++index) {
-        MarkLine(coverage, bounds, annotation.points[index - 1],
-            annotation.points[index], radius);
+    for (std::size_t index = 1; index < points.size(); ++index) {
+        MarkAntialiasedSegment(
+            coverage, bounds, points[index - 1], points[index], radius);
     }
     for (std::int32_t y = bounds.top; y < bounds.bottom; ++y) {
         for (std::int32_t x = bounds.left; x < bounds.right; ++x) {
@@ -177,11 +191,21 @@ void DrawMarkerStroke(
                 static_cast<std::size_t>(y - bounds.top) *
                     static_cast<std::size_t>(bounds.width()) +
                 static_cast<std::size_t>(x - bounds.left);
-            if (coverage[index] != 0) {
-                SetPixel(image, x, y, annotation.color);
+            if (coverage[index] != 0U) {
+                BlendPixelCoverage(image, x, y, color, coverage[index]);
             }
         }
     }
+}
+
+void DrawLine(
+    capture::PixelBuffer& image,
+    const platform::PixelPoint start,
+    const platform::PixelPoint end,
+    const std::int32_t thickness,
+    const std::uint32_t color
+) {
+    DrawStroke(image, {start, end}, thickness, color);
 }
 
 void ApplyPixelation(capture::PixelBuffer& image, platform::PixelRect area) {
@@ -236,27 +260,30 @@ void DrawAnnotation(capture::PixelBuffer& image, const Annotation& annotation) {
         return;
     }
     if (annotation.kind == AnnotationKind::arrow) {
-        DrawLine(image, annotation.start, annotation.end,
-            annotation.thickness, annotation.color);
         const double angle = std::atan2(
             annotation.end.y - annotation.start.y,
             annotation.end.x - annotation.start.x
         );
         constexpr double kSpread = 0.55;
         const double length = std::max(14.0, annotation.thickness * 4.0);
+        std::vector<platform::PixelPoint> stroke{
+            annotation.start,
+            annotation.end,
+        };
         for (const double direction : {angle + std::numbers::pi - kSpread,
                                       angle + std::numbers::pi + kSpread}) {
             const platform::PixelPoint head{
                 annotation.end.x + static_cast<std::int32_t>(std::lround(std::cos(direction) * length)),
                 annotation.end.y + static_cast<std::int32_t>(std::lround(std::sin(direction) * length)),
             };
-            DrawLine(image, annotation.end, head,
-                annotation.thickness, annotation.color);
+            stroke.push_back(head);
+            stroke.push_back(annotation.end);
         }
+        DrawStroke(image, stroke, annotation.thickness, annotation.color);
         return;
     }
     if (annotation.kind == AnnotationKind::marker) {
-        DrawMarkerStroke(image, annotation);
+        DrawStroke(image, annotation.points, annotation.thickness, annotation.color);
         return;
     }
     if (annotation.kind == AnnotationKind::image && annotation.image != nullptr) {
@@ -340,29 +367,30 @@ void DrawAnnotation(capture::PixelBuffer& image, const Annotation& annotation) {
         const double center_y = (bounds.top + bounds.bottom) / 2.0;
         const double radius_x = bounds.width() / 2.0;
         const double radius_y = bounds.height() / 2.0;
-        platform::PixelPoint previous{
-            static_cast<std::int32_t>(std::lround(center_x + radius_x)),
-            static_cast<std::int32_t>(std::lround(center_y)),
-        };
-        for (int degree = 1; degree <= 360; ++degree) {
+        std::vector<platform::PixelPoint> stroke;
+        stroke.reserve(361);
+        for (int degree = 0; degree <= 360; ++degree) {
             const double angle = degree * std::numbers::pi / 180.0;
-            const platform::PixelPoint current{
+            stroke.push_back({
                 static_cast<std::int32_t>(std::lround(center_x + (std::cos(angle) * radius_x))),
                 static_cast<std::int32_t>(std::lround(center_y + (std::sin(angle) * radius_y))),
-            };
-            DrawLine(image, previous, current, annotation.thickness, annotation.color);
-            previous = current;
+            });
         }
+        DrawStroke(image, stroke, annotation.thickness, annotation.color);
         return;
     }
-    DrawLine(image, {bounds.left, bounds.top}, {bounds.right, bounds.top},
-        annotation.thickness, annotation.color);
-    DrawLine(image, {bounds.right, bounds.top}, {bounds.right, bounds.bottom},
-        annotation.thickness, annotation.color);
-    DrawLine(image, {bounds.right, bounds.bottom}, {bounds.left, bounds.bottom},
-        annotation.thickness, annotation.color);
-    DrawLine(image, {bounds.left, bounds.bottom}, {bounds.left, bounds.top},
-        annotation.thickness, annotation.color);
+    DrawStroke(
+        image,
+        {
+            {bounds.left, bounds.top},
+            {bounds.right, bounds.top},
+            {bounds.right, bounds.bottom},
+            {bounds.left, bounds.bottom},
+            {bounds.left, bounds.top},
+        },
+        annotation.thickness,
+        annotation.color
+    );
 }
 
 }  // namespace

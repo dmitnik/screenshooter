@@ -1072,7 +1072,8 @@ void EditorWindow::BeginDocumentAction(const POINT client_point) {
     action_anchor_ = last_document_point_;
     action_before_ = session_.model.Snapshot();
     if (tool_ != Tool::crop) {
-        if (session_.model.state().selected.has_value()) {
+        const bool had_selection = session_.model.state().selected.has_value();
+        if (had_selection) {
             Annotation* selected = session_.model.Find(*session_.model.state().selected);
             const int handle_tolerance = std::max(
                 4,
@@ -1098,6 +1099,11 @@ void EditorWindow::BeginDocumentAction(const POINT client_point) {
             active_annotation_ = *hit;
             dragging_ = true;
             ::SetCapture(window_);
+            InvalidateCanvas();
+            return;
+        }
+        if (had_selection) {
+            session_.model.Select(std::nullopt);
             InvalidateCanvas();
             return;
         }

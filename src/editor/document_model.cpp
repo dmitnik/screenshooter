@@ -217,20 +217,22 @@ void UpdateMarkerStroke(
     const platform::PixelPoint end,
     const bool straight
 ) {
-    annotation.end = end;
+    annotation.end = straight
+        ? platform::PixelPoint{end.x, annotation.start.y}
+        : end;
     if (straight) {
         annotation.points.clear();
         annotation.points.push_back(annotation.start);
-        if (end != annotation.start) {
-            annotation.points.push_back(end);
+        if (annotation.end != annotation.start) {
+            annotation.points.push_back(annotation.end);
         }
         return;
     }
     if (annotation.points.empty()) {
         annotation.points.push_back(annotation.start);
     }
-    if (annotation.points.back() != end) {
-        annotation.points.push_back(end);
+    if (annotation.points.back() != annotation.end) {
+        annotation.points.push_back(annotation.end);
     }
 }
 
