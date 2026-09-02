@@ -1194,7 +1194,12 @@ void EditorWindow::UpdateDocumentAction(
     } else if (resizing_) {
         if (Annotation* annotation = session_.model.Find(active_annotation_)) {
             static_cast<void>(ResizeAnnotationEndpoint(
-                *annotation, resize_handle_, current));
+                *annotation,
+                resize_handle_,
+                current,
+                VisibleDocumentBounds(),
+                constrain_geometry
+            ));
         }
     } else if (dragging_) {
         const platform::PixelPoint delta{

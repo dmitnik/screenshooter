@@ -53,7 +53,9 @@ struct Annotation;
 [[nodiscard]] bool ResizeAnnotationEndpoint(
     Annotation& annotation,
     ResizeHandle handle,
-    platform::PixelPoint point
+    platform::PixelPoint point,
+    platform::PixelRect bounds,
+    bool constrain
 ) noexcept;
 
 void UpdateMarkerStroke(

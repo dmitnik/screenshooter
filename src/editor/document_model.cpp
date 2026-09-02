@@ -194,16 +194,34 @@ ResizeHandle HitResizeHandle(
 bool ResizeAnnotationEndpoint(
     Annotation& annotation,
     const ResizeHandle handle,
-    const platform::PixelPoint point
+    platform::PixelPoint point,
+    const platform::PixelRect bounds,
+    const bool constrain
 ) noexcept {
     if (handle == ResizeHandle::none) {
         return false;
+    }
+    if (constrain) {
+        const platform::PixelPoint anchor = handle == ResizeHandle::start
+            ? annotation.end
+            : annotation.start;
+        point = annotation.kind == AnnotationKind::marker
+            ? platform::PixelPoint{point.x, anchor.y}
+            : ConstrainShapeEnd(annotation.kind, anchor, point, bounds);
     }
     platform::PixelPoint& endpoint = handle == ResizeHandle::start
         ? annotation.start
         : annotation.end;
     endpoint = point;
     if (annotation.kind == AnnotationKind::marker && !annotation.points.empty()) {
+        if (constrain) {
+            annotation.points.clear();
+            annotation.points.push_back(annotation.start);
+            if (annotation.end != annotation.start) {
+                annotation.points.push_back(annotation.end);
+            }
+            return true;
+        }
         platform::PixelPoint& marker_endpoint = handle == ResizeHandle::start
             ? annotation.points.front()
             : annotation.points.back();

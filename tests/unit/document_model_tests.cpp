@@ -81,10 +81,12 @@ TEST_CASE("Selected annotation exposes both resize endpoints") {
     REQUIRE(HitResizeHandle(annotation, {77, 63}, 5) == ResizeHandle::end);
     REQUIRE(HitResizeHandle(annotation, {50, 45}, 5) == ResizeHandle::none);
 
-    REQUIRE(ResizeAnnotationEndpoint(annotation, ResizeHandle::start, {10, 70}));
+    REQUIRE(ResizeAnnotationEndpoint(
+        annotation, ResizeHandle::start, {10, 70}, {0, 0, 120, 100}, false));
     REQUIRE(annotation.start == PixelPoint{10, 70});
     REQUIRE(annotation.end == PixelPoint{80, 60});
-    REQUIRE(ResizeAnnotationEndpoint(annotation, ResizeHandle::end, {100, 20}));
+    REQUIRE(ResizeAnnotationEndpoint(
+        annotation, ResizeHandle::end, {100, 20}, {0, 0, 120, 100}, false));
     REQUIRE(annotation.end == PixelPoint{100, 20});
 }
 
@@ -96,13 +98,48 @@ TEST_CASE("Marker resize endpoints update the visible stroke") {
         .points = {{10, 20}, {30, 25}, {50, 30}},
     };
 
-    REQUIRE(ResizeAnnotationEndpoint(marker, ResizeHandle::start, {5, 15}));
+    REQUIRE(ResizeAnnotationEndpoint(
+        marker, ResizeHandle::start, {5, 15}, {0, 0, 100, 100}, false));
     REQUIRE(marker.start == PixelPoint{5, 15});
     REQUIRE(marker.points.front() == PixelPoint{5, 15});
-    REQUIRE(ResizeAnnotationEndpoint(marker, ResizeHandle::end, {60, 40}));
+    REQUIRE(ResizeAnnotationEndpoint(
+        marker, ResizeHandle::end, {60, 40}, {0, 0, 100, 100}, false));
     REQUIRE(marker.end == PixelPoint{60, 40});
     REQUIRE(marker.points.back() == PixelPoint{60, 40});
-    REQUIRE_FALSE(ResizeAnnotationEndpoint(marker, ResizeHandle::none, {0, 0}));
+    REQUIRE_FALSE(ResizeAnnotationEndpoint(
+        marker, ResizeHandle::none, {0, 0}, {0, 0, 100, 100}, false));
+}
+
+TEST_CASE("Shift constraints apply while resizing existing annotations") {
+    const PixelRect bounds{0, 0, 200, 200};
+    Annotation arrow{
+        .kind = AnnotationKind::arrow,
+        .start = {20, 40},
+        .end = {100, 70},
+    };
+    REQUIRE(ResizeAnnotationEndpoint(
+        arrow, ResizeHandle::start, {30, 65}, bounds, true));
+    REQUIRE(arrow.start == PixelPoint{30, 70});
+
+    Annotation rectangle{
+        .kind = AnnotationKind::rectangle,
+        .start = {20, 20},
+        .end = {50, 40},
+    };
+    REQUIRE(ResizeAnnotationEndpoint(
+        rectangle, ResizeHandle::end, {80, 45}, bounds, true));
+    REQUIRE(rectangle.end == PixelPoint{80, 80});
+
+    Annotation marker{
+        .kind = AnnotationKind::marker,
+        .start = {10, 20},
+        .end = {60, 35},
+        .points = {{10, 20}, {30, 45}, {60, 35}},
+    };
+    REQUIRE(ResizeAnnotationEndpoint(
+        marker, ResizeHandle::end, {90, 80}, bounds, true));
+    REQUIRE(marker.end == PixelPoint{90, 20});
+    REQUIRE(marker.points == std::vector<PixelPoint>{{10, 20}, {90, 20}});
 }
 
 TEST_CASE("History enforces its configured boundary") {
