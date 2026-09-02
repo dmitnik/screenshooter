@@ -27,7 +27,6 @@ namespace {
 constexpr wchar_t kWindowClass[] = L"Screenshooter.EditorWindow";
 constexpr int kCopyButton = 3001;
 constexpr int kSaveButton = 3002;
-constexpr int kShareButton = 3003;
 constexpr int kSelectButton = 3101;
 constexpr int kRectangleButton = 3102;
 constexpr int kLineButton = 3103;
@@ -285,15 +284,15 @@ void EditorWindow::CreateControls() {
             reinterpret_cast<WPARAM>(::GetStockObject(DEFAULT_GUI_FONT)), TRUE);
         return button;
     };
-    select_button_ = create_tool(L"Выбор", kSelectButton);
     rectangle_button_ = create_tool(L"Прямоугольник", kRectangleButton);
-    line_button_ = create_tool(L"Линия", kLineButton);
     ellipse_button_ = create_tool(L"Эллипс", kEllipseButton);
+    line_button_ = create_tool(L"Линия", kLineButton);
     arrow_button_ = create_tool(L"Стрелка", kArrowButton);
     marker_button_ = create_tool(L"Маркер", kMarkerButton);
     text_button_ = create_tool(L"Текст", kTextButton);
     blur_button_ = create_tool(L"Размыть", kBlurButton);
     crop_button_ = create_tool(L"Обрезать", kCropButton);
+    select_button_ = create_tool(L"Выбор", kSelectButton);
     apply_crop_button_ = ::CreateWindowExW(
         0, L"BUTTON", L"Применить", WS_CHILD | BS_DEFPUSHBUTTON,
         0, 0, 0, 0, window_,
@@ -310,12 +309,7 @@ void EditorWindow::CreateControls() {
         0, L"BUTTON", L"Сохранить", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         0, 0, 0, 0, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSaveButton)),
         instance_, nullptr);
-    share_button_ = ::CreateWindowExW(
-        0, L"BUTTON", L"Поделиться", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        0, 0, 0, 0, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kShareButton)),
-        instance_, nullptr);
     ::EnableWindow(save_button_, TRUE);
-    ::EnableWindow(share_button_, TRUE);
     ::DragAcceptFiles(window_, TRUE);
 }
 
@@ -326,19 +320,7 @@ void EditorWindow::LayoutControls() {
     RECT client{};
     ::GetClientRect(window_, &client);
     const UINT dpi = ::GetDpiForWindow(window_);
-    const int bar = platform::DipToPixels(kBarHeightDip, dpi);
     const int panel = platform::DipToPixels(kToolPanelWidthDip, dpi);
-    const int width = platform::DipToPixels(116, dpi);
-    const int gap = platform::DipToPixels(8, dpi);
-    const int height = platform::DipToPixels(34, dpi);
-    const int top = client.bottom - bar + ((bar - height) / 2);
-    int left = client.right - gap - width;
-    ::MoveWindow(share_button_, left, top, width, height, TRUE);
-    left -= width + gap;
-    ::MoveWindow(save_button_, left, top, width, height, TRUE);
-    left -= width + gap;
-    ::MoveWindow(copy_button_, left, top, width, height, TRUE);
-
     const int panel_inset = platform::DipToPixels(8, dpi);
     const int tool_height = platform::DipToPixels(40, dpi);
     const int tool_gap = platform::DipToPixels(1, dpi);
@@ -349,15 +331,25 @@ void EditorWindow::LayoutControls() {
         ::MoveWindow(button, tool_left, tool_top, tool_width, tool_height, TRUE);
         tool_top += tool_height + tool_gap;
     };
-    place_tool(select_button_);
     place_tool(rectangle_button_);
-    place_tool(line_button_);
     place_tool(ellipse_button_);
+    place_tool(line_button_);
     place_tool(arrow_button_);
     place_tool(marker_button_);
     place_tool(text_button_);
     place_tool(blur_button_);
     place_tool(crop_button_);
+    place_tool(select_button_);
+
+    const int action_height = platform::DipToPixels(34, dpi);
+    const int action_gap = platform::DipToPixels(8, dpi);
+    const int action_width = panel - (panel_inset * 2);
+    const int save_top = client.bottom - panel_inset - action_height;
+    const int copy_top = save_top - action_gap - action_height;
+    ::MoveWindow(copy_button_, tool_left, copy_top,
+        action_width, action_height, TRUE);
+    ::MoveWindow(save_button_, tool_left, save_top,
+        action_width, action_height, TRUE);
     LayoutCropActions();
 }
 
@@ -380,8 +372,8 @@ std::optional<EditorWindow::Tool> EditorWindow::ToolForControlId(
 
 void EditorWindow::InvalidateToolButtons() const {
     const HWND buttons[]{
-        select_button_, rectangle_button_, line_button_, ellipse_button_,
-        arrow_button_, marker_button_, text_button_, blur_button_, crop_button_,
+        rectangle_button_, ellipse_button_, line_button_, arrow_button_,
+        marker_button_, text_button_, blur_button_, crop_button_, select_button_,
     };
     for (const HWND button : buttons) {
         ::InvalidateRect(button, nullptr, FALSE);
@@ -510,11 +502,11 @@ void EditorWindow::Paint() {
     HBRUSH canvas_brush = ::CreateSolidBrush(RGB(205, 216, 230));
     ::FillRect(dc, &canvas, canvas_brush);
     ::DeleteObject(canvas_brush);
-    RECT bar_rect{client.left, canvas.bottom, client.right, client.bottom};
+    RECT bar_rect{client.left, canvas.bottom, canvas.right, client.bottom};
     HBRUSH bar_brush = ::CreateSolidBrush(RGB(248, 249, 251));
     ::FillRect(dc, &bar_rect, bar_brush);
     ::DeleteObject(bar_brush);
-    RECT panel_rect{canvas.right, client.top, client.right, canvas.bottom};
+    RECT panel_rect{canvas.right, client.top, client.right, client.bottom};
     HBRUSH panel_brush = ::CreateSolidBrush(RGB(248, 249, 251));
     ::FillRect(dc, &panel_rect, panel_brush);
     ::DeleteObject(panel_brush);
@@ -693,7 +685,6 @@ void EditorWindow::ShowCropActions(const bool visible) const {
     ::ShowWindow(cancel_crop_button_, visible ? SW_SHOW : SW_HIDE);
     ::EnableWindow(copy_button_, TRUE);
     ::EnableWindow(save_button_, tool_ == Tool::crop ? FALSE : TRUE);
-    ::EnableWindow(share_button_, tool_ == Tool::crop ? FALSE : TRUE);
 }
 
 void EditorWindow::LayoutCropActions() const {
@@ -873,15 +864,6 @@ void EditorWindow::SaveAs() {
             L"Screenshooter", MB_OK | MB_ICONINFORMATION);
     } else {
         ::MessageBoxW(window_, L"Не удалось сохранить изображение.",
-            L"Screenshooter", MB_OK | MB_ICONERROR);
-    }
-}
-
-void EditorWindow::Share() {
-    const auto rendered = DocumentRenderer::Render(session_.model);
-    if (!share_service_.Show(window_, rendered)) {
-        ::MessageBoxW(window_,
-            L"Не удалось открыть системную панель «Поделиться».",
             L"Screenshooter", MB_OK | MB_ICONERROR);
     }
 }
@@ -1409,8 +1391,6 @@ LRESULT EditorWindow::HandleMessage(
             CancelCrop();
         } else if (LOWORD(w_param) == kSaveButton) {
             SaveAs();
-        } else if (LOWORD(w_param) == kShareButton) {
-            Share();
         }
         return 0;
     }

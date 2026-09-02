@@ -2,7 +2,6 @@
 
 #include "editor/document_session.h"
 #include "editor/command_history.h"
-#include "export/share_service.h"
 #include "performance/metrics.h"
 
 #include <windows.h>
@@ -47,7 +46,6 @@ private:
     void ZoomAt(POINT client_point, float factor);
     void CopyAndClose();
     void SaveAs();
-    void Share();
     void InsertImageFile(const wchar_t* path);
     [[nodiscard]] platform::PixelRect VisibleDocumentBounds() const noexcept;
     [[nodiscard]] platform::PixelPoint DocumentPoint(POINT client_point) const noexcept;
@@ -83,7 +81,6 @@ private:
     HWND window_{};
     HWND copy_button_{};
     HWND save_button_{};
-    HWND share_button_{};
     HWND select_button_{};
     HWND rectangle_button_{};
     HWND line_button_{};
@@ -127,7 +124,6 @@ private:
     DocumentState crop_mode_before_;
     platform::PixelPoint text_origin_{};
     std::optional<Annotation> object_clipboard_;
-    exporting::ShareService share_service_;
     performance::MetricTimer first_paint_timer_;
     bool first_paint_logged_{};
 };
