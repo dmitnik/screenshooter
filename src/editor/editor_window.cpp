@@ -48,6 +48,7 @@ constexpr int kSettingsButton = 3202;
 constexpr int kRedButton = 3211;
 constexpr int kGreenButton = 3212;
 constexpr int kBlueButton = 3213;
+constexpr int kBlackButton = 3214;
 constexpr int kFontSizeCombo = 3221;
 constexpr int kBoldButton = 3222;
 constexpr int kItalicButton = 3223;
@@ -127,13 +128,14 @@ bool IsActionControlId(const int control_id) noexcept {
 
 bool IsColorControlId(const int control_id) noexcept {
     return control_id == kRedButton || control_id == kGreenButton ||
-        control_id == kBlueButton;
+        control_id == kBlueButton || control_id == kBlackButton;
 }
 
 std::uint32_t ColorForControlId(const int control_id) noexcept {
     switch (control_id) {
     case kGreenButton: return 0xFF2E7D32;
     case kBlueButton: return 0xFF1E88E5;
+    case kBlackButton: return 0xFF202124;
     default: return 0xFFE53935;
     }
 }
@@ -174,7 +176,7 @@ void SetRoundedButtonRegion(
 bool RegisterEditorClass(const HINSTANCE instance) {
     WNDCLASSEXW window_class{
         .cbSize = sizeof(WNDCLASSEXW),
-        .style = CS_HREDRAW | CS_VREDRAW,
+        .style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS,
         .lpfnWndProc = &EditorWindow::WindowProcedure,
         .hInstance = instance,
         .hIcon = ::LoadIconW(nullptr, IDI_APPLICATION),
@@ -412,6 +414,7 @@ void EditorWindow::CreateControls() {
     red_button_ = create_owner_button(L"Красный", kRedButton);
     green_button_ = create_owner_button(L"Зелёный", kGreenButton);
     blue_button_ = create_owner_button(L"Синий", kBlueButton);
+    black_button_ = create_owner_button(L"Чёрный", kBlackButton);
     bold_button_ = create_owner_button(L"Полужирный", kBoldButton);
     italic_button_ = create_owner_button(L"Курсив", kItalicButton);
     underline_button_ = create_owner_button(L"Подчёркнутый", kUnderlineButton);
@@ -443,6 +446,7 @@ void EditorWindow::CreateControls() {
     const HWND action_buttons[]{
         apply_crop_button_, cancel_crop_button_, copy_button_, save_button_,
         info_button_, settings_button_, red_button_, green_button_, blue_button_,
+        black_button_,
         bold_button_, italic_button_, underline_button_,
     };
     for (const HWND button : action_buttons) {
@@ -518,10 +522,10 @@ void EditorWindow::LayoutControls() {
     place_tool(select_button_);
 
     const int property_top = tool_top + platform::DipToPixels(8, dpi);
-    const int color_slot = tool_width / 3;
+    const int color_slot = tool_width / 4;
     const int color_button_size = platform::DipToPixels(32, dpi);
-    const HWND color_buttons[]{red_button_, green_button_, blue_button_};
-    for (int index = 0; index < 3; ++index) {
+    const HWND color_buttons[]{red_button_, green_button_, blue_button_, black_button_};
+    for (int index = 0; index < 4; ++index) {
         const int left = tool_left + index * color_slot +
             ((color_slot - color_button_size) / 2);
         ::MoveWindow(color_buttons[index], left, property_top,
@@ -719,34 +723,98 @@ void EditorWindow::DrawColorButton(const DRAWITEMSTRUCT& item) const {
             ? selected->color
             : current_color_;
     const std::uint32_t color = ColorForControlId(static_cast<int>(item.CtlID));
-    HBRUSH background = ::CreateSolidBrush(RGB(248, 249, 251));
-    ::FillRect(item.hDC, &item.rcItem, background);
-    ::DeleteObject(background);
-
-    const int diameter = platform::DipToPixels(20, dpi);
-    RECT circle{
-        item.rcItem.left + ((item.rcItem.right - item.rcItem.left - diameter) / 2),
-        item.rcItem.top + ((item.rcItem.bottom - item.rcItem.top - diameter) / 2),
-        0,
-        0,
-    };
-    circle.right = circle.left + diameter;
-    circle.bottom = circle.top + diameter;
-    const COLORREF rgb = RGB(
+    COLORREF fill_color = RGB(
         (color >> 16U) & 0xFFU,
         (color >> 8U) & 0xFFU,
         color & 0xFFU);
-    HBRUSH fill = ::CreateSolidBrush(rgb);
-    HPEN border = ::CreatePen(PS_SOLID,
-        displayed_color == color ? platform::DipToPixels(3, dpi) : 1,
-        displayed_color == color ? RGB(35, 43, 54) : RGB(150, 156, 164));
-    HGDIOBJ old_fill = ::SelectObject(item.hDC, fill);
-    HGDIOBJ old_pen = ::SelectObject(item.hDC, border);
-    ::Ellipse(item.hDC, circle.left, circle.top, circle.right, circle.bottom);
-    ::SelectObject(item.hDC, old_pen);
-    ::SelectObject(item.hDC, old_fill);
-    ::DeleteObject(border);
-    ::DeleteObject(fill);
+    if ((item.itemState & ODS_SELECTED) != 0) {
+        fill_color = RGB(
+            (GetRValue(fill_color) * 88) / 100,
+            (GetGValue(fill_color) * 88) / 100,
+            (GetBValue(fill_color) * 88) / 100);
+    }
+
+    const int width = item.rcItem.right - item.rcItem.left;
+    const int height = item.rcItem.bottom - item.rcItem.top;
+    BITMAPINFO info{};
+    info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth = width;
+    info.bmiHeader.biHeight = -height;
+    info.bmiHeader.biPlanes = 1;
+    info.bmiHeader.biBitCount = 32;
+    info.bmiHeader.biCompression = BI_RGB;
+    void* bits = nullptr;
+    HBITMAP bitmap = ::CreateDIBSection(
+        item.hDC, &info, DIB_RGB_COLORS, &bits, nullptr, 0);
+    HDC buffer = ::CreateCompatibleDC(item.hDC);
+    if (bitmap != nullptr && buffer != nullptr && bits != nullptr) {
+        struct Pixel {
+            std::uint8_t blue;
+            std::uint8_t green;
+            std::uint8_t red;
+            std::uint8_t alpha;
+        };
+        auto* pixels = static_cast<Pixel*>(bits);
+        const COLORREF background = RGB(248, 249, 251);
+        const COLORREF outline = item.hwndItem == hovered_button_
+            ? RGB(55, 75, 98)
+            : RGB(76, 84, 94);
+        const bool active = displayed_color == color;
+        const COLORREF selection_ring = RGB(231, 239, 248);
+        const double scale = dpi / 96.0;
+        const double center_x = width / 2.0;
+        const double center_y = height / 2.0;
+        const double outer_radius = (active ? 12.5 : 11.0) * scale;
+        const double ring_radius = 10.75 * scale;
+        const double fill_radius = 9.5 * scale;
+        const auto coverage = [](const double radius, const double distance) {
+            return std::clamp(radius + 0.5 - distance, 0.0, 1.0);
+        };
+        const auto blend = [](const COLORREF base, const COLORREF overlay,
+                              const double amount) {
+            const auto channel = [amount](const BYTE base_value, const BYTE overlay_value) {
+                return static_cast<BYTE>(std::lround(
+                    base_value + ((overlay_value - base_value) * amount)));
+            };
+            return RGB(
+                channel(GetRValue(base), GetRValue(overlay)),
+                channel(GetGValue(base), GetGValue(overlay)),
+                channel(GetBValue(base), GetBValue(overlay)));
+        };
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                const double dx = (x + 0.5) - center_x;
+                const double dy = (y + 0.5) - center_y;
+                const double distance = std::sqrt((dx * dx) + (dy * dy));
+                COLORREF pixel = blend(
+                    background, outline, coverage(outer_radius, distance));
+                if (active) {
+                    pixel = blend(
+                        pixel, selection_ring, coverage(ring_radius, distance));
+                }
+                pixel = blend(pixel, fill_color, coverage(fill_radius, distance));
+                Pixel& target = pixels[(y * width) + x];
+                target.blue = GetBValue(pixel);
+                target.green = GetGValue(pixel);
+                target.red = GetRValue(pixel);
+                target.alpha = 0xFF;
+            }
+        }
+        HGDIOBJ previous = ::SelectObject(buffer, bitmap);
+        ::BitBlt(item.hDC, item.rcItem.left, item.rcItem.top,
+            width, height, buffer, 0, 0, SRCCOPY);
+        ::SelectObject(buffer, previous);
+    } else {
+        HBRUSH background = ::CreateSolidBrush(RGB(248, 249, 251));
+        ::FillRect(item.hDC, &item.rcItem, background);
+        ::DeleteObject(background);
+    }
+    if (buffer != nullptr) {
+        ::DeleteDC(buffer);
+    }
+    if (bitmap != nullptr) {
+        ::DeleteObject(bitmap);
+    }
     if ((item.itemState & ODS_FOCUS) != 0) {
         RECT focus = item.rcItem;
         ::InflateRect(&focus, -2, -2);
@@ -815,7 +883,7 @@ void EditorWindow::UpdatePropertyControls() {
     const bool text_visible = selected != nullptr
         ? selected->kind == AnnotationKind::text
         : tool_ == Tool::text;
-    for (const HWND button : {red_button_, green_button_, blue_button_}) {
+    for (const HWND button : {red_button_, green_button_, blue_button_, black_button_}) {
         ::ShowWindow(button, color_visible ? SW_SHOW : SW_HIDE);
         ::InvalidateRect(button, nullptr, FALSE);
     }
@@ -1662,27 +1730,60 @@ void EditorWindow::Redo() {
     }
 }
 
-void EditorWindow::BeginTextEdit(const POINT client_point) {
+void EditorWindow::BeginTextEdit(
+    const POINT client_point,
+    const std::optional<AnnotationId> existing
+) {
     CommitTextEdit();
     action_before_ = session_.model.Snapshot();
-    text_origin_ = DocumentPoint(client_point);
-    const int width = static_cast<int>(std::lround(240.0F * scale_));
-    const int height = static_cast<int>(std::lround(90.0F * scale_));
+    editing_text_id_ = existing;
+    const Annotation* annotation = existing.has_value()
+        ? session_.model.Find(*existing)
+        : nullptr;
+    POINT edit_origin = client_point;
+    int document_width = 240;
+    int document_height = 90;
+    const wchar_t* initial_text = L"";
+    if (annotation != nullptr && annotation->kind == AnnotationKind::text) {
+        session_.model.Select(annotation->id);
+        current_color_ = annotation->color;
+        current_font_size_ = annotation->font_size;
+        current_font_bold_ = annotation->font_bold;
+        current_font_italic_ = annotation->font_italic;
+        current_font_underline_ = annotation->font_underline;
+        const auto bounds = platform::Normalize(annotation->start, annotation->end);
+        const auto visible = VisibleDocumentBounds();
+        edit_origin = {
+            static_cast<LONG>(std::lround(
+                offset_x_ + ((bounds.left - visible.left) * scale_))),
+            static_cast<LONG>(std::lround(
+                offset_y_ + ((bounds.top - visible.top) * scale_))),
+        };
+        document_width = bounds.width();
+        document_height = bounds.height();
+        initial_text = annotation->text.c_str();
+    } else {
+        editing_text_id_.reset();
+        text_origin_ = DocumentPoint(client_point);
+    }
+    const int width = static_cast<int>(std::lround(document_width * scale_));
+    const int height = static_cast<int>(std::lround(document_height * scale_));
     text_edit_ = ::CreateWindowExW(
         WS_EX_CLIENTEDGE,
         L"EDIT",
-        L"",
+        initial_text,
         WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_WANTRETURN | ES_AUTOVSCROLL,
-        client_point.x,
-        client_point.y,
-        std::max(width, 160),
-        std::max(height, 60),
+        edit_origin.x,
+        edit_origin.y,
+        std::max(width, existing.has_value() ? 80 : 160),
+        std::max(height, existing.has_value() ? 40 : 60),
         window_,
         nullptr,
         instance_,
         nullptr
     );
     if (text_edit_ == nullptr) {
+        editing_text_id_.reset();
         return;
     }
     const int edit_font_size = std::max(
@@ -1702,7 +1803,12 @@ void EditorWindow::BeginTextEdit(const POINT client_point) {
         1,
         reinterpret_cast<DWORD_PTR>(this)
     );
+    ::SendMessageW(text_edit_, EM_SETSEL,
+        static_cast<WPARAM>(::GetWindowTextLengthW(text_edit_)),
+        static_cast<LPARAM>(::GetWindowTextLengthW(text_edit_)));
     ::SetFocus(text_edit_);
+    UpdatePropertyControls();
+    InvalidateCanvas();
 }
 
 void EditorWindow::CommitTextEdit() {
@@ -1720,6 +1826,27 @@ void EditorWindow::CommitTextEdit() {
     if (text_edit_font_ != nullptr) {
         ::DeleteObject(text_edit_font_);
         text_edit_font_ = nullptr;
+    }
+    const auto edited_id = editing_text_id_;
+    editing_text_id_.reset();
+    if (edited_id.has_value()) {
+        Annotation* annotation = session_.model.Find(*edited_id);
+        if (annotation != nullptr) {
+            if (text.empty()) {
+                static_cast<void>(session_.model.Remove(*edited_id));
+            } else {
+                annotation->text = std::move(text);
+                annotation->color = current_color_;
+                annotation->font_size = current_font_size_;
+                annotation->font_bold = current_font_bold_;
+                annotation->font_italic = current_font_italic_;
+                annotation->font_underline = current_font_underline_;
+            }
+            history_.Commit(action_before_, session_.model.Snapshot());
+        }
+        UpdatePropertyControls();
+        InvalidateCanvas();
+        return;
     }
     if (text.empty()) {
         return;
@@ -1959,6 +2086,8 @@ LRESULT EditorWindow::HandleMessage(
             ChooseColor(ColorForControlId(kGreenButton));
         } else if (LOWORD(w_param) == kBlueButton) {
             ChooseColor(ColorForControlId(kBlueButton));
+        } else if (LOWORD(w_param) == kBlackButton) {
+            ChooseColor(ColorForControlId(kBlackButton));
         } else if (LOWORD(w_param) == kFontSizeCombo && HIWORD(w_param) == CBN_SELCHANGE) {
             ChooseFontSize();
         } else if (IsTextStyleControlId(LOWORD(w_param))) {
@@ -2001,6 +2130,19 @@ LRESULT EditorWindow::HandleMessage(
     case WM_LBUTTONDOWN:
         BeginDocumentAction(POINT{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)});
         return 0;
+    case WM_LBUTTONDBLCLK: {
+        const POINT point{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)};
+        if (tool_ != Tool::crop && IsCanvasPoint(point)) {
+            const auto hit = session_.model.HitTest(DocumentPoint(point));
+            const Annotation* annotation = hit.has_value()
+                ? session_.model.Find(*hit)
+                : nullptr;
+            if (annotation != nullptr && annotation->kind == AnnotationKind::text) {
+                BeginTextEdit(point, annotation->id);
+            }
+        }
+        return 0;
+    }
     case WM_LBUTTONUP:
         EndDocumentAction(
             POINT{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)},

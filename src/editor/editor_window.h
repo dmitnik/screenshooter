@@ -70,7 +70,10 @@ private:
     void DeleteSelection();
     void Undo();
     void Redo();
-    void BeginTextEdit(POINT client_point);
+    void BeginTextEdit(
+        POINT client_point,
+        std::optional<AnnotationId> existing = std::nullopt
+    );
     void CommitTextEdit();
     void CopySelectedObject();
     void PasteObject();
@@ -105,6 +108,7 @@ private:
     HWND red_button_{};
     HWND green_button_{};
     HWND blue_button_{};
+    HWND black_button_{};
     HWND font_size_combo_{};
     HWND bold_button_{};
     HWND italic_button_{};
@@ -142,6 +146,7 @@ private:
     DocumentState action_before_;
     DocumentState crop_mode_before_;
     platform::PixelPoint text_origin_{};
+    std::optional<AnnotationId> editing_text_id_;
     std::optional<Annotation> object_clipboard_;
     std::uint32_t current_color_{0xFFE53935};
     std::int32_t current_font_size_{24};
