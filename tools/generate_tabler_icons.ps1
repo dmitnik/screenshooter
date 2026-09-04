@@ -29,6 +29,11 @@ $icons = [ordered]@{
     'crop'           = [Drawing.Color]::FromArgb(28, 145, 122)
     'copy'           = [Drawing.Color]::FromArgb(51, 102, 204)
     'device-floppy'  = [Drawing.Color]::FromArgb(28, 145, 122)
+    'info-circle'    = [Drawing.Color]::FromArgb(51, 102, 204)
+    'settings'       = [Drawing.Color]::FromArgb(90, 98, 108)
+    'bold'           = [Drawing.Color]::FromArgb(51, 59, 70)
+    'italic'         = [Drawing.Color]::FromArgb(51, 59, 70)
+    'underline'      = [Drawing.Color]::FromArgb(51, 59, 70)
 }
 $sizes = @(20, 25, 30, 40)
 

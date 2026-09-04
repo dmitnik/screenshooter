@@ -71,6 +71,10 @@ struct Annotation {
     platform::PixelPoint end{};
     std::uint32_t color{0xFFE53935};
     std::int32_t thickness{4};
+    std::int32_t font_size{24};
+    bool font_bold{};
+    bool font_italic{};
+    bool font_underline{};
     std::vector<platform::PixelPoint> points;
     std::wstring text;
     std::shared_ptr<const capture::PixelBuffer> image;

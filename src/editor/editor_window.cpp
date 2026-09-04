@@ -43,6 +43,15 @@ constexpr int kBlurButton = 3110;
 constexpr int kCropButton = 3111;
 constexpr int kApplyCropButton = 3112;
 constexpr int kCancelCropButton = 3113;
+constexpr int kInfoButton = 3201;
+constexpr int kSettingsButton = 3202;
+constexpr int kRedButton = 3211;
+constexpr int kGreenButton = 3212;
+constexpr int kBlueButton = 3213;
+constexpr int kFontSizeCombo = 3221;
+constexpr int kBoldButton = 3222;
+constexpr int kItalicButton = 3223;
+constexpr int kUnderlineButton = 3224;
 constexpr int kBarHeightDip = 54;
 constexpr int kToolPanelWidthDip = 176;
 constexpr int kCropActionWidthDip = 96;
@@ -91,6 +100,8 @@ int ActionIconResourceId(const int control_id) noexcept {
     switch (control_id) {
     case kCopyButton: return IDI_TABLER_COPY;
     case kSaveButton: return IDI_TABLER_DEVICE_FLOPPY;
+    case kInfoButton: return IDI_TABLER_INFO_CIRCLE;
+    case kSettingsButton: return IDI_TABLER_SETTINGS;
     default: return 0;
     }
 }
@@ -101,13 +112,50 @@ const wchar_t* ActionButtonLabel(const int control_id) noexcept {
     case kSaveButton: return L"Сохранить";
     case kApplyCropButton: return L"Применить";
     case kCancelCropButton: return L"Отмена";
+    case kInfoButton:
+    case kSettingsButton:
+        return L"";
     default: return L"";
     }
 }
 
 bool IsActionControlId(const int control_id) noexcept {
     return control_id == kCopyButton || control_id == kSaveButton ||
-        control_id == kApplyCropButton || control_id == kCancelCropButton;
+        control_id == kApplyCropButton || control_id == kCancelCropButton ||
+        control_id == kInfoButton || control_id == kSettingsButton;
+}
+
+bool IsColorControlId(const int control_id) noexcept {
+    return control_id == kRedButton || control_id == kGreenButton ||
+        control_id == kBlueButton;
+}
+
+std::uint32_t ColorForControlId(const int control_id) noexcept {
+    switch (control_id) {
+    case kGreenButton: return 0xFF2E7D32;
+    case kBlueButton: return 0xFF1E88E5;
+    default: return 0xFFE53935;
+    }
+}
+
+int TextStyleIconResourceId(const int control_id) noexcept {
+    switch (control_id) {
+    case kBoldButton: return IDI_TABLER_BOLD;
+    case kItalicButton: return IDI_TABLER_ITALIC;
+    case kUnderlineButton: return IDI_TABLER_UNDERLINE;
+    default: return 0;
+    }
+}
+
+bool IsTextStyleControlId(const int control_id) noexcept {
+    return control_id == kBoldButton || control_id == kItalicButton ||
+        control_id == kUnderlineButton;
+}
+
+bool SupportsColor(const AnnotationKind kind) noexcept {
+    return kind == AnnotationKind::rectangle || kind == AnnotationKind::ellipse ||
+        kind == AnnotationKind::line || kind == AnnotationKind::arrow ||
+        kind == AnnotationKind::text;
 }
 
 void SetRoundedButtonRegion(
@@ -275,6 +323,9 @@ EditorWindow::~EditorWindow() {
         ::DestroyWindow(window_);
     }
     ReleasePaintBuffer();
+    if (text_edit_font_ != nullptr) {
+        ::DeleteObject(text_edit_font_);
+    }
 }
 
 bool EditorWindow::CreateNativeWindow() {
@@ -350,6 +401,29 @@ void EditorWindow::CreateControls() {
     blur_button_ = create_tool(L"Размыть", kBlurButton);
     crop_button_ = create_tool(L"Обрезать", kCropButton);
     select_button_ = create_tool(L"Выбор", kSelectButton);
+    const auto create_owner_button = [this](const wchar_t* name, const int command) {
+        return ::CreateWindowExW(
+            0, L"BUTTON", name, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
+            0, 0, 0, 0, window_,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(command)), instance_, nullptr);
+    };
+    info_button_ = create_owner_button(L"Информация", kInfoButton);
+    settings_button_ = create_owner_button(L"Настройки", kSettingsButton);
+    red_button_ = create_owner_button(L"Красный", kRedButton);
+    green_button_ = create_owner_button(L"Зелёный", kGreenButton);
+    blue_button_ = create_owner_button(L"Синий", kBlueButton);
+    bold_button_ = create_owner_button(L"Полужирный", kBoldButton);
+    italic_button_ = create_owner_button(L"Курсив", kItalicButton);
+    underline_button_ = create_owner_button(L"Подчёркнутый", kUnderlineButton);
+    font_size_combo_ = ::CreateWindowExW(
+        0, WC_COMBOBOXW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP |
+            CBS_DROPDOWNLIST | CBS_HASSTRINGS,
+        0, 0, 0, 0, window_,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kFontSizeCombo)), instance_, nullptr);
+    for (const wchar_t* size : {L"18 px", L"24 px", L"32 px", L"40 px", L"48 px"}) {
+        ::SendMessageW(font_size_combo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(size));
+    }
+    ::SendMessageW(font_size_combo_, CB_SETCURSEL, 1, 0);
     apply_crop_button_ = ::CreateWindowExW(
         0, L"BUTTON", L"Применить", WS_CHILD | BS_OWNERDRAW,
         0, 0, 0, 0, window_,
@@ -368,6 +442,8 @@ void EditorWindow::CreateControls() {
         instance_, nullptr);
     const HWND action_buttons[]{
         apply_crop_button_, cancel_crop_button_, copy_button_, save_button_,
+        info_button_, settings_button_, red_button_, green_button_, blue_button_,
+        bold_button_, italic_button_, underline_button_,
     };
     for (const HWND button : action_buttons) {
         ::SetWindowSubclass(button, &EditorWindow::ToolButtonProcedure, 1,
@@ -375,8 +451,29 @@ void EditorWindow::CreateControls() {
         ::SendMessageW(button, WM_SETFONT,
             reinterpret_cast<WPARAM>(::GetStockObject(DEFAULT_GUI_FONT)), TRUE);
     }
+    ::SendMessageW(font_size_combo_, WM_SETFONT,
+        reinterpret_cast<WPARAM>(::GetStockObject(DEFAULT_GUI_FONT)), TRUE);
+    const HWND tooltip = ::CreateWindowExW(
+        WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr, WS_POPUP | TTS_ALWAYSTIP,
+        CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+        window_, nullptr, instance_, nullptr);
+    if (tooltip != nullptr) {
+        const auto add_tooltip = [tooltip, this](const HWND control, wchar_t* text) {
+            TOOLINFOW info{
+                .cbSize = sizeof(TOOLINFOW),
+                .uFlags = TTF_IDISHWND | TTF_SUBCLASS,
+                .hwnd = window_,
+                .uId = reinterpret_cast<UINT_PTR>(control),
+                .lpszText = text,
+            };
+            ::SendMessageW(tooltip, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&info));
+        };
+        add_tooltip(info_button_, const_cast<wchar_t*>(L"Информация"));
+        add_tooltip(settings_button_, const_cast<wchar_t*>(L"Настройки"));
+    }
     ::EnableWindow(save_button_, TRUE);
     ::DragAcceptFiles(window_, TRUE);
+    UpdatePropertyControls();
 }
 
 void EditorWindow::LayoutControls() {
@@ -389,8 +486,20 @@ void EditorWindow::LayoutControls() {
     const int bar = platform::DipToPixels(kBarHeightDip, dpi);
     const int panel = platform::DipToPixels(kToolPanelWidthDip, dpi);
     const int panel_inset = platform::DipToPixels(8, dpi);
-    const int tool_height = platform::DipToPixels(40, dpi);
     const int tool_gap = platform::DipToPixels(1, dpi);
+    const int action_height = platform::DipToPixels(34, dpi);
+    const int action_gap = platform::DipToPixels(8, dpi);
+    const int action_width = panel - (panel_inset * 2);
+    const int save_top = client.bottom - bar - action_height;
+    const int copy_top = save_top - action_gap - action_height;
+    const int utility_top = copy_top - action_gap - action_height;
+    const int property_height = platform::DipToPixels(78, dpi);
+    const int available_tool_height =
+        (utility_top - panel_inset - property_height - (tool_gap * 9)) / 9;
+    const int tool_height = std::clamp(
+        available_tool_height,
+        platform::DipToPixels(22, dpi),
+        platform::DipToPixels(40, dpi));
     const int tool_left = client.right - panel + panel_inset;
     const int tool_width = panel - (panel_inset * 2);
     int tool_top = panel_inset;
@@ -408,17 +517,43 @@ void EditorWindow::LayoutControls() {
     place_tool(crop_button_);
     place_tool(select_button_);
 
-    const int action_height = platform::DipToPixels(34, dpi);
-    const int action_gap = platform::DipToPixels(8, dpi);
-    const int action_width = panel - (panel_inset * 2);
-    const int save_top = client.bottom - bar - action_height;
-    const int copy_top = save_top - action_gap - action_height;
+    const int property_top = tool_top + platform::DipToPixels(8, dpi);
+    const int color_slot = tool_width / 3;
+    const int color_button_size = platform::DipToPixels(32, dpi);
+    const HWND color_buttons[]{red_button_, green_button_, blue_button_};
+    for (int index = 0; index < 3; ++index) {
+        const int left = tool_left + index * color_slot +
+            ((color_slot - color_button_size) / 2);
+        ::MoveWindow(color_buttons[index], left, property_top,
+            color_button_size, color_button_size, TRUE);
+    }
+    const int text_top = property_top + color_button_size + platform::DipToPixels(8, dpi);
+    const int style_gap = platform::DipToPixels(4, dpi);
+    const int combo_width = platform::DipToPixels(62, dpi);
+    const int style_width = (tool_width - combo_width - (style_gap * 3)) / 3;
+    ::MoveWindow(font_size_combo_, tool_left, text_top,
+        combo_width, platform::DipToPixels(180, dpi), TRUE);
+    int style_left = tool_left + combo_width + style_gap;
+    for (const HWND button : {bold_button_, italic_button_, underline_button_}) {
+        ::MoveWindow(button, style_left, text_top, style_width,
+            platform::DipToPixels(30, dpi), TRUE);
+        style_left += style_width + style_gap;
+    }
+
+    const int utility_left = tool_left +
+        ((action_width - (action_height * 2) - action_gap) / 2);
+    ::MoveWindow(info_button_, utility_left, utility_top,
+        action_height, action_height, TRUE);
+    ::MoveWindow(settings_button_, utility_left + action_height + action_gap, utility_top,
+        action_height, action_height, TRUE);
     ::MoveWindow(copy_button_, tool_left, copy_top,
         action_width, action_height, TRUE);
     ::MoveWindow(save_button_, tool_left, save_top,
         action_width, action_height, TRUE);
     SetRoundedButtonRegion(copy_button_, action_width, action_height, dpi);
     SetRoundedButtonRegion(save_button_, action_width, action_height, dpi);
+    SetRoundedButtonRegion(info_button_, action_height, action_height, dpi);
+    SetRoundedButtonRegion(settings_button_, action_height, action_height, dpi);
     LayoutCropActions();
 }
 
@@ -534,14 +669,19 @@ void EditorWindow::DrawActionButton(const DRAWITEMSTRUCT& item) const {
         ::OffsetRect(&content, 0, platform::DipToPixels(1, dpi));
     }
     const int resource_id = ActionIconResourceId(static_cast<int>(item.CtlID));
+    const wchar_t* label = ActionButtonLabel(static_cast<int>(item.CtlID));
     if (resource_id != 0) {
         const int icon_size = platform::DipToPixels(20, dpi);
+        const bool icon_only = label[0] == L'\0';
         RECT icon{
-            content.left + platform::DipToPixels(10, dpi),
+            icon_only
+                ? content.left + ((content.right - content.left - icon_size) / 2)
+                : content.left + platform::DipToPixels(10, dpi),
             content.top + ((content.bottom - content.top - icon_size) / 2),
-            content.left + platform::DipToPixels(10, dpi) + icon_size,
+            0,
             content.top + ((content.bottom - content.top + icon_size) / 2),
         };
+        icon.right = icon.left + icon_size;
         const HICON glyph = reinterpret_cast<HICON>(::LoadImageW(
             instance_, MAKEINTRESOURCEW(resource_id), IMAGE_ICON,
             icon_size, icon_size, LR_DEFAULTCOLOR | LR_SHARED));
@@ -549,9 +689,10 @@ void EditorWindow::DrawActionButton(const DRAWITEMSTRUCT& item) const {
             ::DrawIconEx(item.hDC, icon.left, icon.top, glyph,
                 icon_size, icon_size, 0, nullptr, DI_NORMAL);
         }
-        content.left = icon.right + platform::DipToPixels(6, dpi);
+        if (!icon_only) {
+            content.left = icon.right + platform::DipToPixels(6, dpi);
+        }
     }
-    const wchar_t* label = ActionButtonLabel(static_cast<int>(item.CtlID));
     ::SetBkMode(item.hDC, TRANSPARENT);
     ::SetTextColor(item.hDC, disabled ? RGB(142, 148, 156) : RGB(39, 47, 58));
     HGDIOBJ old_font = ::SelectObject(item.hDC,
@@ -565,6 +706,189 @@ void EditorWindow::DrawActionButton(const DRAWITEMSTRUCT& item) const {
         ::InflateRect(&focus, -4, -4);
         ::DrawFocusRect(item.hDC, &focus);
     }
+}
+
+void EditorWindow::DrawColorButton(const DRAWITEMSTRUCT& item) const {
+    const UINT dpi = ::GetDpiForWindow(window_);
+    const auto selected_id = session_.model.state().selected;
+    const Annotation* selected = selected_id.has_value()
+        ? session_.model.Find(*selected_id)
+        : nullptr;
+    const std::uint32_t displayed_color =
+        selected != nullptr && SupportsColor(selected->kind)
+            ? selected->color
+            : current_color_;
+    const std::uint32_t color = ColorForControlId(static_cast<int>(item.CtlID));
+    HBRUSH background = ::CreateSolidBrush(RGB(248, 249, 251));
+    ::FillRect(item.hDC, &item.rcItem, background);
+    ::DeleteObject(background);
+
+    const int diameter = platform::DipToPixels(20, dpi);
+    RECT circle{
+        item.rcItem.left + ((item.rcItem.right - item.rcItem.left - diameter) / 2),
+        item.rcItem.top + ((item.rcItem.bottom - item.rcItem.top - diameter) / 2),
+        0,
+        0,
+    };
+    circle.right = circle.left + diameter;
+    circle.bottom = circle.top + diameter;
+    const COLORREF rgb = RGB(
+        (color >> 16U) & 0xFFU,
+        (color >> 8U) & 0xFFU,
+        color & 0xFFU);
+    HBRUSH fill = ::CreateSolidBrush(rgb);
+    HPEN border = ::CreatePen(PS_SOLID,
+        displayed_color == color ? platform::DipToPixels(3, dpi) : 1,
+        displayed_color == color ? RGB(35, 43, 54) : RGB(150, 156, 164));
+    HGDIOBJ old_fill = ::SelectObject(item.hDC, fill);
+    HGDIOBJ old_pen = ::SelectObject(item.hDC, border);
+    ::Ellipse(item.hDC, circle.left, circle.top, circle.right, circle.bottom);
+    ::SelectObject(item.hDC, old_pen);
+    ::SelectObject(item.hDC, old_fill);
+    ::DeleteObject(border);
+    ::DeleteObject(fill);
+    if ((item.itemState & ODS_FOCUS) != 0) {
+        RECT focus = item.rcItem;
+        ::InflateRect(&focus, -2, -2);
+        ::DrawFocusRect(item.hDC, &focus);
+    }
+}
+
+void EditorWindow::DrawTextStyleButton(const DRAWITEMSTRUCT& item) const {
+    const auto selected_id = session_.model.state().selected;
+    const Annotation* selected = selected_id.has_value()
+        ? session_.model.Find(*selected_id)
+        : nullptr;
+    const bool bold = selected != nullptr && selected->kind == AnnotationKind::text
+        ? selected->font_bold : current_font_bold_;
+    const bool italic = selected != nullptr && selected->kind == AnnotationKind::text
+        ? selected->font_italic : current_font_italic_;
+    const bool underline = selected != nullptr && selected->kind == AnnotationKind::text
+        ? selected->font_underline : current_font_underline_;
+    const bool active = item.CtlID == kBoldButton ? bold
+        : item.CtlID == kItalicButton ? italic : underline;
+    const bool pressed = (item.itemState & ODS_SELECTED) != 0;
+    const bool hovered = item.hwndItem == hovered_button_;
+    const COLORREF background = pressed ? RGB(199, 222, 248)
+        : active ? RGB(213, 232, 253)
+        : hovered ? RGB(232, 242, 253)
+        : RGB(248, 249, 251);
+    HBRUSH brush = ::CreateSolidBrush(background);
+    HPEN pen = ::CreatePen(PS_SOLID, 1, RGB(190, 198, 207));
+    HGDIOBJ old_brush = ::SelectObject(item.hDC, brush);
+    HGDIOBJ old_pen = ::SelectObject(item.hDC, pen);
+    const UINT dpi = ::GetDpiForWindow(window_);
+    const int radius = platform::DipToPixels(6, dpi);
+    ::RoundRect(item.hDC, item.rcItem.left, item.rcItem.top,
+        item.rcItem.right, item.rcItem.bottom, radius, radius);
+    ::SelectObject(item.hDC, old_pen);
+    ::SelectObject(item.hDC, old_brush);
+    ::DeleteObject(pen);
+    ::DeleteObject(brush);
+    const int icon_size = platform::DipToPixels(18, dpi);
+    const HICON icon = reinterpret_cast<HICON>(::LoadImageW(
+        instance_, MAKEINTRESOURCEW(TextStyleIconResourceId(static_cast<int>(item.CtlID))),
+        IMAGE_ICON, icon_size, icon_size, LR_DEFAULTCOLOR | LR_SHARED));
+    if (icon != nullptr) {
+        ::DrawIconEx(item.hDC,
+            item.rcItem.left + ((item.rcItem.right - item.rcItem.left - icon_size) / 2),
+            item.rcItem.top + ((item.rcItem.bottom - item.rcItem.top - icon_size) / 2),
+            icon, icon_size, icon_size, 0, nullptr, DI_NORMAL);
+    }
+    if ((item.itemState & ODS_FOCUS) != 0) {
+        RECT focus = item.rcItem;
+        ::InflateRect(&focus, -3, -3);
+        ::DrawFocusRect(item.hDC, &focus);
+    }
+}
+
+void EditorWindow::UpdatePropertyControls() {
+    const auto selected_id = session_.model.state().selected;
+    const Annotation* selected = selected_id.has_value()
+        ? session_.model.Find(*selected_id)
+        : nullptr;
+    const bool tool_supports_color = tool_ == Tool::rectangle || tool_ == Tool::ellipse ||
+        tool_ == Tool::line || tool_ == Tool::arrow || tool_ == Tool::text;
+    const bool color_visible = selected != nullptr
+        ? SupportsColor(selected->kind)
+        : tool_supports_color;
+    const bool text_visible = selected != nullptr
+        ? selected->kind == AnnotationKind::text
+        : tool_ == Tool::text;
+    for (const HWND button : {red_button_, green_button_, blue_button_}) {
+        ::ShowWindow(button, color_visible ? SW_SHOW : SW_HIDE);
+        ::InvalidateRect(button, nullptr, FALSE);
+    }
+    ::ShowWindow(font_size_combo_, text_visible ? SW_SHOW : SW_HIDE);
+    for (const HWND button : {bold_button_, italic_button_, underline_button_}) {
+        ::ShowWindow(button, text_visible ? SW_SHOW : SW_HIDE);
+        ::InvalidateRect(button, nullptr, FALSE);
+    }
+    if (text_visible) {
+        const int size = selected != nullptr ? selected->font_size : current_font_size_;
+        constexpr int sizes[]{18, 24, 32, 40, 48};
+        int index = 1;
+        for (int candidate = 0; candidate < static_cast<int>(std::size(sizes)); ++candidate) {
+            if (sizes[candidate] == size) {
+                index = candidate;
+                break;
+            }
+        }
+        ::SendMessageW(font_size_combo_, CB_SETCURSEL, index, 0);
+    }
+}
+
+void EditorWindow::ChooseColor(const std::uint32_t color) {
+    current_color_ = color;
+    const auto selected_id = session_.model.state().selected;
+    Annotation* selected = selected_id.has_value() ? session_.model.Find(*selected_id) : nullptr;
+    if (selected != nullptr && SupportsColor(selected->kind) && selected->color != color) {
+        const auto before = session_.model.Snapshot();
+        selected->color = color;
+        history_.Commit(before, session_.model.Snapshot());
+        InvalidateCanvas();
+    }
+    UpdatePropertyControls();
+}
+
+void EditorWindow::ChooseFontSize() {
+    constexpr int sizes[]{18, 24, 32, 40, 48};
+    const LRESULT selection = ::SendMessageW(font_size_combo_, CB_GETCURSEL, 0, 0);
+    if (selection < 0 || selection >= static_cast<LRESULT>(std::size(sizes))) {
+        return;
+    }
+    const int size = sizes[selection];
+    current_font_size_ = size;
+    const auto selected_id = session_.model.state().selected;
+    Annotation* selected = selected_id.has_value() ? session_.model.Find(*selected_id) : nullptr;
+    if (selected != nullptr && selected->kind == AnnotationKind::text &&
+        selected->font_size != size) {
+        const auto before = session_.model.Snapshot();
+        selected->font_size = size;
+        history_.Commit(before, session_.model.Snapshot());
+        InvalidateCanvas();
+    }
+    UpdatePropertyControls();
+}
+
+void EditorWindow::ToggleTextStyle(const int control_id) {
+    bool* current = control_id == kBoldButton ? &current_font_bold_
+        : control_id == kItalicButton ? &current_font_italic_
+        : &current_font_underline_;
+    *current = !*current;
+    const auto selected_id = session_.model.state().selected;
+    Annotation* selected = selected_id.has_value() ? session_.model.Find(*selected_id) : nullptr;
+    if (selected != nullptr && selected->kind == AnnotationKind::text) {
+        bool* value = control_id == kBoldButton ? &selected->font_bold
+            : control_id == kItalicButton ? &selected->font_italic
+            : &selected->font_underline;
+        const auto before = session_.model.Snapshot();
+        *value = !*value;
+        *current = *value;
+        history_.Commit(before, session_.model.Snapshot());
+        InvalidateCanvas();
+    }
+    UpdatePropertyControls();
 }
 
 bool EditorWindow::EnsurePaintBuffer(
@@ -879,6 +1203,7 @@ void EditorWindow::EnterCropMode() {
     crop_selection_ready_ = false;
     ShowCropActions(false);
     InvalidateToolButtons();
+    UpdatePropertyControls();
     InvalidateCanvas();
 }
 
@@ -899,6 +1224,7 @@ void EditorWindow::ApplyCrop() {
     ::SetFocus(window_);
     ShowCropActions(false);
     InvalidateToolButtons();
+    UpdatePropertyControls();
     InvalidateCanvas();
 }
 
@@ -912,6 +1238,7 @@ void EditorWindow::CancelCrop() {
     crop_selection_ready_ = false;
     ShowCropActions(false);
     InvalidateToolButtons();
+    UpdatePropertyControls();
     InvalidateCanvas();
 }
 
@@ -1066,6 +1393,7 @@ void EditorWindow::InsertImageFile(const wchar_t* path) {
     };
     static_cast<void>(session_.model.Add(std::move(annotation)));
     history_.Commit(before, session_.model.Snapshot());
+    UpdatePropertyControls();
     InvalidateCanvas();
 }
 
@@ -1098,6 +1426,7 @@ void EditorWindow::BeginDocumentAction(const POINT client_point) {
         return;
     }
     ::SetFocus(window_);
+    last_client_point_ = client_point;
     last_document_point_ = DocumentPoint(client_point);
     action_anchor_ = last_document_point_;
     action_before_ = session_.model.Snapshot();
@@ -1129,16 +1458,19 @@ void EditorWindow::BeginDocumentAction(const POINT client_point) {
             active_annotation_ = *hit;
             dragging_ = true;
             ::SetCapture(window_);
+            UpdatePropertyControls();
             InvalidateCanvas();
             return;
         }
         if (had_selection) {
             session_.model.Select(std::nullopt);
+            UpdatePropertyControls();
             InvalidateCanvas();
             return;
         }
         if (tool_ == Tool::select) {
             session_.model.Select(std::nullopt);
+            UpdatePropertyControls();
             InvalidateCanvas();
             return;
         }
@@ -1189,6 +1521,7 @@ void EditorWindow::BeginDocumentAction(const POINT client_point) {
         .kind = kind,
         .start = last_document_point_,
         .end = last_document_point_,
+        .color = current_color_,
     };
     if (kind == AnnotationKind::marker) {
         annotation.color = 0x66FFEB3B;
@@ -1197,6 +1530,7 @@ void EditorWindow::BeginDocumentAction(const POINT client_point) {
         marker_straight_drafting_ = false;
     }
     active_annotation_ = session_.model.Add(annotation);
+    UpdatePropertyControls();
     creating_ = true;
     ::SetCapture(window_);
     InvalidateCanvas();
@@ -1210,6 +1544,7 @@ void EditorWindow::UpdateDocumentAction(
         return;
     }
     auto current = DocumentPoint(client_point);
+    last_client_point_ = client_point;
     const auto& source = session_.model.source();
     if (crop_drafting_) {
         current.x = std::clamp(current.x, 0, source.width);
@@ -1309,17 +1644,20 @@ void EditorWindow::DeleteSelection() {
     const auto before = session_.model.Snapshot();
     static_cast<void>(session_.model.Remove(*session_.model.state().selected));
     history_.Commit(before, session_.model.Snapshot());
+    UpdatePropertyControls();
     InvalidateCanvas();
 }
 
 void EditorWindow::Undo() {
     if (history_.Undo(session_.model)) {
+        UpdatePropertyControls();
         InvalidateCanvas();
     }
 }
 
 void EditorWindow::Redo() {
     if (history_.Redo(session_.model)) {
+        UpdatePropertyControls();
         InvalidateCanvas();
     }
 }
@@ -1347,6 +1685,17 @@ void EditorWindow::BeginTextEdit(const POINT client_point) {
     if (text_edit_ == nullptr) {
         return;
     }
+    const int edit_font_size = std::max(
+        8, static_cast<int>(std::lround(current_font_size_ * scale_)));
+    text_edit_font_ = ::CreateFontW(-edit_font_size, 0, 0, 0,
+        current_font_bold_ ? FW_BOLD : FW_NORMAL,
+        current_font_italic_, current_font_underline_, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+    if (text_edit_font_ != nullptr) {
+        ::SendMessageW(text_edit_, WM_SETFONT,
+            reinterpret_cast<WPARAM>(text_edit_font_), TRUE);
+    }
     ::SetWindowSubclass(
         text_edit_,
         &EditorWindow::TextEditProcedure,
@@ -1368,6 +1717,10 @@ void EditorWindow::CommitTextEdit() {
     text_edit_ = nullptr;
     ::RemoveWindowSubclass(edit, &EditorWindow::TextEditProcedure, 1);
     ::DestroyWindow(edit);
+    if (text_edit_font_ != nullptr) {
+        ::DeleteObject(text_edit_font_);
+        text_edit_font_ = nullptr;
+    }
     if (text.empty()) {
         return;
     }
@@ -1375,10 +1728,16 @@ void EditorWindow::CommitTextEdit() {
         .kind = AnnotationKind::text,
         .start = text_origin_,
         .end = {text_origin_.x + 240, text_origin_.y + 90},
+        .color = current_color_,
+        .font_size = current_font_size_,
+        .font_bold = current_font_bold_,
+        .font_italic = current_font_italic_,
+        .font_underline = current_font_underline_,
         .text = std::move(text),
     };
     static_cast<void>(session_.model.Add(std::move(annotation)));
     history_.Commit(action_before_, session_.model.Snapshot());
+    UpdatePropertyControls();
     InvalidateCanvas();
 }
 
@@ -1411,6 +1770,7 @@ void EditorWindow::PasteObject() {
         };
         static_cast<void>(session_.model.Add(std::move(annotation)));
         history_.Commit(before, session_.model.Snapshot());
+        UpdatePropertyControls();
         InvalidateCanvas();
         return;
     }
@@ -1426,6 +1786,7 @@ void EditorWindow::PasteObject() {
     }
     static_cast<void>(session_.model.Add(std::move(copy)));
     history_.Commit(before, session_.model.Snapshot());
+    UpdatePropertyControls();
     InvalidateCanvas();
 }
 
@@ -1526,6 +1887,27 @@ LRESULT EditorWindow::HandleMessage(
             DrawActionButton(*item);
             return TRUE;
         }
+        if (const auto* item = reinterpret_cast<const DRAWITEMSTRUCT*>(l_param);
+            item != nullptr && IsColorControlId(static_cast<int>(item->CtlID))) {
+            DrawColorButton(*item);
+            return TRUE;
+        }
+        if (const auto* item = reinterpret_cast<const DRAWITEMSTRUCT*>(l_param);
+            item != nullptr && IsTextStyleControlId(static_cast<int>(item->CtlID))) {
+            DrawTextStyleButton(*item);
+            return TRUE;
+        }
+        return ::DefWindowProcW(window_, message, w_param, l_param);
+    case WM_CTLCOLOREDIT:
+        if (reinterpret_cast<HWND>(l_param) == text_edit_) {
+            const HDC dc = reinterpret_cast<HDC>(w_param);
+            ::SetTextColor(dc, RGB(
+                (current_color_ >> 16U) & 0xFFU,
+                (current_color_ >> 8U) & 0xFFU,
+                current_color_ & 0xFFU));
+            ::SetBkColor(dc, RGB(255, 255, 255));
+            return reinterpret_cast<LRESULT>(::GetStockObject(WHITE_BRUSH));
+        }
         return ::DefWindowProcW(window_, message, w_param, l_param);
     case WM_COMMAND: {
         const auto choose_tool = [this](const Tool next) {
@@ -1534,6 +1916,7 @@ LRESULT EditorWindow::HandleMessage(
             }
             tool_ = next;
             InvalidateToolButtons();
+            UpdatePropertyControls();
         };
         if (reinterpret_cast<HWND>(l_param) == text_edit_ &&
             HIWORD(w_param) == EN_KILLFOCUS) {
@@ -1564,6 +1947,22 @@ LRESULT EditorWindow::HandleMessage(
             CancelCrop();
         } else if (LOWORD(w_param) == kSaveButton) {
             SaveAs();
+        } else if (LOWORD(w_param) == kInfoButton) {
+            ::SendMessageW(host_, app::messages::kShowInfo,
+                reinterpret_cast<WPARAM>(window_), 0);
+        } else if (LOWORD(w_param) == kSettingsButton) {
+            ::SendMessageW(host_, app::messages::kShowSettings,
+                reinterpret_cast<WPARAM>(window_), 0);
+        } else if (LOWORD(w_param) == kRedButton) {
+            ChooseColor(ColorForControlId(kRedButton));
+        } else if (LOWORD(w_param) == kGreenButton) {
+            ChooseColor(ColorForControlId(kGreenButton));
+        } else if (LOWORD(w_param) == kBlueButton) {
+            ChooseColor(ColorForControlId(kBlueButton));
+        } else if (LOWORD(w_param) == kFontSizeCombo && HIWORD(w_param) == CBN_SELCHANGE) {
+            ChooseFontSize();
+        } else if (IsTextStyleControlId(LOWORD(w_param))) {
+            ToggleTextStyle(LOWORD(w_param));
         }
         return 0;
     }
@@ -1632,6 +2031,10 @@ LRESULT EditorWindow::HandleMessage(
         ::ReleaseCapture();
         return 0;
     case WM_KEYDOWN:
+        if (w_param == VK_SHIFT && resizing_) {
+            UpdateDocumentAction(last_client_point_, true);
+            return 0;
+        }
         if (w_param == VK_ESCAPE) {
             if (tool_ == Tool::crop && crop_selection_ready_) {
                 ClearCropSelection();
@@ -1707,6 +2110,12 @@ LRESULT EditorWindow::HandleMessage(
                 *session_.model.state().selected, delta));
             history_.Commit(before, session_.model.Snapshot());
             InvalidateCanvas();
+            return 0;
+        }
+        return 0;
+    case WM_KEYUP:
+        if (w_param == VK_SHIFT && resizing_) {
+            UpdateDocumentAction(last_client_point_, false);
             return 0;
         }
         return 0;

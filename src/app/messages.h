@@ -9,5 +9,7 @@ inline constexpr UINT kCaptureReady = WM_APP + 2;
 inline constexpr UINT kSelectionComplete = WM_APP + 3;
 inline constexpr UINT kSelectionCancelled = WM_APP + 4;
 inline constexpr UINT kEditorClosed = WM_APP + 5;
+inline constexpr UINT kShowInfo = WM_APP + 6;
+inline constexpr UINT kShowSettings = WM_APP + 7;
 
 }  // namespace screenshooter::app::messages

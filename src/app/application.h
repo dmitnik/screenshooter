@@ -34,10 +34,8 @@ private:
     void HandleSelectionComplete(WPARAM payload);
     void HandleTrayCommand(tray::TrayCommand command);
     void OpenImage();
-    void ChooseSaveFolder();
     void OpenSaveFolder();
-    void ConfigureHotkeys();
-    void ToggleAutostart();
+    void ConfigureSettings(HWND owner);
     [[nodiscard]] bool RegisterConfiguredHotkeys(const settings::Settings& settings);
     void UnregisterHotkeys();
     void CreateEditor(capture::PixelBuffer image);

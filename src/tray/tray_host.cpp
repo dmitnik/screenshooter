@@ -8,13 +8,11 @@ namespace {
 constexpr UINT kCaptureCommand = 2001;
 constexpr UINT kExitCommand = 2002;
 constexpr UINT kOpenCommand = 2003;
-constexpr UINT kChooseFolderCommand = 2004;
 constexpr UINT kOpenFolderCommand = 2005;
-constexpr UINT kAutostartCommand = 2006;
 constexpr UINT kWindowCommand = 2007;
 constexpr UINT kMonitorCommand = 2008;
 constexpr UINT kAllCommand = 2009;
-constexpr UINT kHotkeysCommand = 2010;
+constexpr UINT kSettingsCommand = 2010;
 
 }  // namespace
 
@@ -58,10 +56,8 @@ void TrayHost::Shutdown() {
 
 TrayCommand TrayHost::HandleCallback(const LPARAM event_data) const {
     const UINT event = LOWORD(event_data);
-    if (event == NIN_SELECT || event == NIN_KEYSELECT) {
-        return TrayCommand::capture_area;
-    }
-    if (event == WM_CONTEXTMENU || event == WM_RBUTTONUP) {
+    if (event == NIN_SELECT || event == NIN_KEYSELECT ||
+        event == WM_CONTEXTMENU || event == WM_RBUTTONUP) {
         return ShowContextMenu();
     }
     return TrayCommand::none;
@@ -81,10 +77,8 @@ TrayCommand TrayHost::ShowContextMenu() const {
     ::AppendMenuW(menu, MF_STRING, kAllCommand, L"Все мониторы");
     ::AppendMenuW(menu, MF_STRING, kOpenCommand, L"Открыть изображение…");
     ::AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    ::AppendMenuW(menu, MF_STRING, kChooseFolderCommand, L"Выбрать папку сохранения…");
     ::AppendMenuW(menu, MF_STRING, kOpenFolderCommand, L"Открыть папку сохранения");
-    ::AppendMenuW(menu, MF_STRING, kHotkeysCommand, L"Настроить горячие клавиши…");
-    ::AppendMenuW(menu, MF_STRING, kAutostartCommand, L"Переключить автозапуск");
+    ::AppendMenuW(menu, MF_STRING, kSettingsCommand, L"Настройки…");
     ::AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     ::AppendMenuW(menu, MF_STRING, kExitCommand, L"Выход");
     ::SetForegroundWindow(owner_);
@@ -113,17 +107,11 @@ TrayCommand TrayHost::ShowContextMenu() const {
     if (command == kOpenCommand) {
         return TrayCommand::open_image;
     }
-    if (command == kChooseFolderCommand) {
-        return TrayCommand::choose_save_folder;
-    }
     if (command == kOpenFolderCommand) {
         return TrayCommand::open_save_folder;
     }
-    if (command == kHotkeysCommand) {
-        return TrayCommand::configure_hotkeys;
-    }
-    if (command == kAutostartCommand) {
-        return TrayCommand::toggle_autostart;
+    if (command == kSettingsCommand) {
+        return TrayCommand::configure_settings;
     }
     if (command == kExitCommand) {
         return TrayCommand::exit_application;

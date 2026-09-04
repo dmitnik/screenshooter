@@ -24,6 +24,14 @@ struct Settings {
     HotkeyBinding window_hotkey{MOD_CONTROL | MOD_SHIFT, '4'};
 };
 
+enum class SettingsValidationError {
+    none,
+    missing_hotkey,
+    duplicate_hotkey,
+};
+
+[[nodiscard]] SettingsValidationError ValidateSettings(const Settings& settings) noexcept;
+
 class SettingsStore final {
 public:
     explicit SettingsStore(std::wstring settings_path = L"Software\\Screenshooter")

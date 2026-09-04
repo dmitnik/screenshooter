@@ -62,6 +62,23 @@ DWORD PackHotkey(const HotkeyBinding binding) {
 
 }  // namespace
 
+SettingsValidationError ValidateSettings(const Settings& settings) noexcept {
+    if (!settings.hotkeys_enabled) {
+        return SettingsValidationError::none;
+    }
+    const std::array bindings{
+        settings.area_hotkey, settings.monitor_hotkey, settings.window_hotkey};
+    if (bindings[0].virtual_key == 0 || bindings[1].virtual_key == 0 ||
+        bindings[2].virtual_key == 0) {
+        return SettingsValidationError::missing_hotkey;
+    }
+    if (bindings[0] == bindings[1] || bindings[0] == bindings[2] ||
+        bindings[1] == bindings[2]) {
+        return SettingsValidationError::duplicate_hotkey;
+    }
+    return SettingsValidationError::none;
+}
+
 Settings SettingsStore::Load() const {
     Settings settings;
     HKEY key = nullptr;

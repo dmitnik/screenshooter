@@ -46,6 +46,7 @@ target_link_libraries(screenshooter_core PUBLIC
 
 add_executable(screenshooter WIN32
     src/app/application.cpp
+    src/app/info_dialog.cpp
     src/app/main.cpp
     src/editor/document_session.cpp
     src/editor/editor_window.cpp

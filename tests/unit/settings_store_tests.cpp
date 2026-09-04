@@ -61,3 +61,22 @@ TEST_CASE("Unknown registry schema safely restores defaults") {
     REQUIRE_FALSE(loaded.autostart_enabled);
     REQUIRE(loaded.save_folder.empty());
 }
+
+TEST_CASE("Enabled hotkeys must all be present and unique") {
+    using screenshooter::settings::SettingsValidationError;
+    screenshooter::settings::Settings settings;
+    REQUIRE(screenshooter::settings::ValidateSettings(settings) ==
+        SettingsValidationError::none);
+
+    settings.monitor_hotkey.virtual_key = 0;
+    REQUIRE(screenshooter::settings::ValidateSettings(settings) ==
+        SettingsValidationError::missing_hotkey);
+
+    settings.monitor_hotkey = settings.area_hotkey;
+    REQUIRE(screenshooter::settings::ValidateSettings(settings) ==
+        SettingsValidationError::duplicate_hotkey);
+
+    settings.hotkeys_enabled = false;
+    REQUIRE(screenshooter::settings::ValidateSettings(settings) ==
+        SettingsValidationError::none);
+}

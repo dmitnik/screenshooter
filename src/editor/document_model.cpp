@@ -201,7 +201,43 @@ bool ResizeAnnotationEndpoint(
     if (handle == ResizeHandle::none) {
         return false;
     }
-    if (constrain) {
+    if (constrain && annotation.kind == AnnotationKind::image &&
+        annotation.image != nullptr && annotation.image->width > 0 &&
+        annotation.image->height > 0) {
+        const platform::PixelPoint anchor = handle == ResizeHandle::start
+            ? annotation.end
+            : annotation.start;
+        const platform::PixelPoint previous = handle == ResizeHandle::start
+            ? annotation.start
+            : annotation.end;
+        const auto direction = [](const std::int32_t delta, const std::int32_t fallback) {
+            if (delta != 0) {
+                return delta < 0 ? -1 : 1;
+            }
+            return fallback < 0 ? -1 : 1;
+        };
+        const std::int32_t direction_x = direction(point.x - anchor.x, previous.x - anchor.x);
+        const std::int32_t direction_y = direction(point.y - anchor.y, previous.y - anchor.y);
+        const auto available = [](const std::int32_t coordinate, const std::int32_t sign,
+                                  const std::int32_t lower, const std::int32_t upper) {
+            return sign < 0 ? coordinate - lower : upper - 1 - coordinate;
+        };
+        const double desired_scale = std::max(
+            static_cast<double>(std::abs(point.x - anchor.x)) / annotation.image->width,
+            static_cast<double>(std::abs(point.y - anchor.y)) / annotation.image->height);
+        const double maximum_scale = std::min(
+            static_cast<double>(available(anchor.x, direction_x, bounds.left, bounds.right)) /
+                annotation.image->width,
+            static_cast<double>(available(anchor.y, direction_y, bounds.top, bounds.bottom)) /
+                annotation.image->height);
+        const double scale = std::max(0.0, std::min(desired_scale, maximum_scale));
+        point = {
+            anchor.x + direction_x * static_cast<std::int32_t>(
+                std::lround(annotation.image->width * scale)),
+            anchor.y + direction_y * static_cast<std::int32_t>(
+                std::lround(annotation.image->height * scale)),
+        };
+    } else if (constrain) {
         const platform::PixelPoint anchor = handle == ResizeHandle::start
             ? annotation.end
             : annotation.start;

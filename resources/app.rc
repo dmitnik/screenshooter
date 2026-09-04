@@ -16,6 +16,11 @@ IDI_TABLER_BLUR ICON "tabler\\generated\\blur.ico"
 IDI_TABLER_CROP ICON "tabler\\generated\\crop.ico"
 IDI_TABLER_COPY ICON "tabler\\generated\\copy.ico"
 IDI_TABLER_DEVICE_FLOPPY ICON "tabler\\generated\\device-floppy.ico"
+IDI_TABLER_INFO_CIRCLE ICON "tabler\\generated\\info-circle.ico"
+IDI_TABLER_SETTINGS ICON "tabler\\generated\\settings.ico"
+IDI_TABLER_BOLD ICON "tabler\\generated\\bold.ico"
+IDI_TABLER_ITALIC ICON "tabler\\generated\\italic.ico"
+IDI_TABLER_UNDERLINE ICON "tabler\\generated\\underline.ico"
 
 VS_VERSION_INFO VERSIONINFO
  FILEVERSION 0,1,27,0

@@ -416,3 +416,114 @@ TEST_CASE("Applied crop marks an otherwise clean document as changed") {
     REQUIRE(model.ApplyCrop());
     REQUIRE(model.dirty());
 }
+
+TEST_CASE("Image resize uses source aspect ratio after free distortion") {
+    const auto image = std::make_shared<const screenshooter::capture::PixelBuffer>(
+        CreateOpaqueBuffer(200, 100));
+    Annotation annotation{
+        .kind = AnnotationKind::image,
+        .start = {50, 50},
+        .end = {100, 80},
+        .image = image,
+    };
+    const PixelRect bounds{0, 0, 300, 250};
+
+    REQUIRE(ResizeAnnotationEndpoint(
+        annotation, ResizeHandle::end, {170, 100}, bounds, true));
+    REQUIRE(annotation.start == PixelPoint{50, 50});
+    REQUIRE(annotation.end == PixelPoint{170, 110});
+
+    annotation.start = {100, 100};
+    annotation.end = {250, 150};
+    REQUIRE(ResizeAnnotationEndpoint(
+        annotation, ResizeHandle::start, {100, 100}, bounds, true));
+    REQUIRE(annotation.start == PixelPoint{100, 75});
+    REQUIRE(annotation.end == PixelPoint{250, 150});
+}
+
+TEST_CASE("Image aspect constraint respects document edges in every direction") {
+    const auto image = std::make_shared<const screenshooter::capture::PixelBuffer>(
+        CreateOpaqueBuffer(200, 100));
+    const PixelRect bounds{0, 0, 300, 250};
+    Annotation annotation{
+        .kind = AnnotationKind::image,
+        .start = {50, 50},
+        .end = {100, 80},
+        .image = image,
+    };
+
+    REQUIRE(ResizeAnnotationEndpoint(
+        annotation, ResizeHandle::end, {0, 0}, bounds, true));
+    REQUIRE(annotation.end == PixelPoint{0, 25});
+
+    annotation.start = {250, 200};
+    annotation.end = {200, 150};
+    REQUIRE(ResizeAnnotationEndpoint(
+        annotation, ResizeHandle::end, {299, 249}, bounds, true));
+    REQUIRE(annotation.end == PixelPoint{299, 225});
+
+    annotation.start = {150, 125};
+    REQUIRE(ResizeAnnotationEndpoint(
+        annotation, ResizeHandle::end, {299, 0}, bounds, true));
+    REQUIRE(annotation.end == PixelPoint{299, 50});
+
+    annotation.start = {150, 125};
+    REQUIRE(ResizeAnnotationEndpoint(
+        annotation, ResizeHandle::end, {0, 249}, bounds, true));
+    REQUIRE(annotation.end == PixelPoint{0, 200});
+}
+
+TEST_CASE("Text appearance survives snapshots and undo redo") {
+    DocumentModel model(CreateOpaqueBuffer(320, 160));
+    const auto id = model.Add(Annotation{
+        .kind = AnnotationKind::text,
+        .start = {10, 10},
+        .end = {300, 130},
+        .color = 0xFF1E88E5,
+        .font_size = 40,
+        .font_bold = true,
+        .font_italic = true,
+        .font_underline = true,
+        .text = L"Screenshooter",
+    });
+    CommandHistory history;
+    const auto before = model.Snapshot();
+    model.Find(id)->font_size = 48;
+    model.Find(id)->color = 0xFF2E7D32;
+    history.Commit(before, model.Snapshot());
+
+    REQUIRE(history.Undo(model));
+    REQUIRE(model.Find(id)->font_size == 40);
+    REQUIRE(model.Find(id)->color == 0xFF1E88E5);
+    REQUIRE(model.Find(id)->font_bold);
+    REQUIRE(model.Find(id)->font_italic);
+    REQUIRE(model.Find(id)->font_underline);
+    REQUIRE(history.Redo(model));
+    REQUIRE(model.Find(id)->font_size == 48);
+    REQUIRE(model.Find(id)->color == 0xFF2E7D32);
+}
+
+TEST_CASE("Text renderer applies size and font styles") {
+    const auto render = [](const int size, const bool bold, const bool italic,
+                           const bool underline, const std::uint32_t color) {
+        DocumentModel model(CreateOpaqueBuffer(320, 160));
+        static_cast<void>(model.Add(Annotation{
+            .kind = AnnotationKind::text,
+            .start = {10, 10},
+            .end = {300, 140},
+            .color = color,
+            .font_size = size,
+            .font_bold = bold,
+            .font_italic = italic,
+            .font_underline = underline,
+            .text = L"Style check",
+        }));
+        return DocumentRenderer::Render(model);
+    };
+    const auto normal = render(24, false, false, false, 0xFFE53935);
+    REQUIRE(normal != render(48, false, false, false, 0xFFE53935));
+    REQUIRE(normal != render(24, true, false, false, 0xFFE53935));
+    REQUIRE(normal != render(24, false, true, false, 0xFFE53935));
+    REQUIRE(normal != render(24, false, false, true, 0xFFE53935));
+    REQUIRE(normal != render(24, false, false, false, 0xFF1E88E5));
+}

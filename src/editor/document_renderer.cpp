@@ -329,8 +329,10 @@ void DrawAnnotation(capture::PixelBuffer& image, const Annotation& annotation) {
         if (dc != nullptr && bitmap != nullptr && bits != nullptr) {
             HGDIOBJ old_bitmap = ::SelectObject(dc, bitmap);
             std::memcpy(bits, image.pixels.data(), image.pixels.size());
-            const int font_size = std::max(18, annotation.thickness * 6);
-            HFONT font = ::CreateFontW(-font_size, 0, 0, 0, FW_NORMAL, FALSE, FALSE,
+            const int font_size = std::max(8, annotation.font_size);
+            HFONT font = ::CreateFontW(-font_size, 0, 0, 0,
+                annotation.font_bold ? FW_BOLD : FW_NORMAL,
+                annotation.font_italic, annotation.font_underline,
                 FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
                 CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
             HGDIOBJ old_font = ::SelectObject(dc, font);

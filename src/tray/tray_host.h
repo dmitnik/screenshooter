@@ -12,10 +12,8 @@ enum class TrayCommand {
     capture_monitor,
     capture_all,
     open_image,
-    choose_save_folder,
     open_save_folder,
-    configure_hotkeys,
-    toggle_autostart,
+    configure_settings,
     exit_application,
 };
 

@@ -1,5 +1,7 @@
 #include "app/application.h"
 
+#include "app/info_dialog.h"
+
 #include "app/messages.h"
 #include "capture/capture_service.h"
 #include "editor/document_session.h"
@@ -315,44 +317,9 @@ void Application::OpenImage() {
     }
 }
 
-void Application::ChooseSaveFolder() {
-    Microsoft::WRL::ComPtr<IFileOpenDialog> dialog;
-    if (FAILED(::CoCreateInstance(CLSID_FileOpenDialog, nullptr,
-            CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)))) {
-        return;
-    }
-    DWORD options = 0;
-    dialog->GetOptions(&options);
-    dialog->SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM);
-    dialog->SetTitle(L"Папка сохранения Screenshooter");
-    if (!settings_.save_folder.empty()) {
-        Microsoft::WRL::ComPtr<IShellItem> current;
-        if (SUCCEEDED(::SHCreateItemFromParsingName(
-                settings_.save_folder.c_str(), nullptr, IID_PPV_ARGS(&current)))) {
-            dialog->SetFolder(current.Get());
-        }
-    }
-    const HRESULT shown = dialog->Show(host_window_);
-    if (shown == HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
-        return;
-    }
-    Microsoft::WRL::ComPtr<IShellItem> item;
-    PWSTR path = nullptr;
-    if (FAILED(shown) || FAILED(dialog->GetResult(&item)) ||
-        FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)) || path == nullptr) {
-        return;
-    }
-    settings_.save_folder = path;
-    ::CoTaskMemFree(path);
-    if (!settings_store_.Save(settings_)) {
-        ::MessageBoxW(nullptr, L"Не удалось сохранить настройку папки.",
-            kApplicationName, MB_OK | MB_ICONERROR);
-    }
-}
-
 void Application::OpenSaveFolder() {
     if (settings_.save_folder.empty()) {
-        ChooseSaveFolder();
+        ConfigureSettings(host_window_);
     }
     if (!settings_.save_folder.empty()) {
         const auto result = reinterpret_cast<INT_PTR>(::ShellExecuteW(
@@ -364,8 +331,9 @@ void Application::OpenSaveFolder() {
     }
 }
 
-void Application::ConfigureHotkeys() {
-    const auto proposed = settings::ShowHotkeySettingsDialog(instance_, host_window_, settings_);
+void Application::ConfigureSettings(const HWND owner) {
+    const auto proposed = settings::ShowSettingsDialog(
+        instance_, owner != nullptr ? owner : host_window_, settings_);
     if (!proposed.has_value()) {
         return;
     }
@@ -373,34 +341,34 @@ void Application::ConfigureHotkeys() {
     UnregisterHotkeys();
     if (!RegisterConfiguredHotkeys(*proposed)) {
         static_cast<void>(RegisterConfiguredHotkeys(previous));
-        ::MessageBoxW(nullptr,
+        ::MessageBoxW(owner,
             L"Одно из выбранных сочетаний уже занято. Старые настройки сохранены.",
             kApplicationName, MB_OK | MB_ICONWARNING);
+        return;
+    }
+    const bool autostart_changed =
+        proposed->autostart_enabled != previous.autostart_enabled;
+    if (autostart_changed &&
+        !settings_store_.SetAutostart(proposed->autostart_enabled)) {
+        static_cast<void>(settings_store_.SetAutostart(previous.autostart_enabled));
+        UnregisterHotkeys();
+        static_cast<void>(RegisterConfiguredHotkeys(previous));
+        ::MessageBoxW(owner, L"Не удалось изменить автозапуск. Старые настройки сохранены.",
+            kApplicationName, MB_OK | MB_ICONERROR);
         return;
     }
     if (!settings_store_.Save(*proposed)) {
         UnregisterHotkeys();
         static_cast<void>(RegisterConfiguredHotkeys(previous));
+        if (autostart_changed) {
+            static_cast<void>(settings_store_.SetAutostart(previous.autostart_enabled));
+        }
         static_cast<void>(settings_store_.Save(previous));
-        ::MessageBoxW(nullptr, L"Не удалось сохранить горячие клавиши.",
+        ::MessageBoxW(owner, L"Не удалось сохранить настройки. Старые значения восстановлены.",
             kApplicationName, MB_OK | MB_ICONERROR);
         return;
     }
     settings_ = *proposed;
-}
-
-void Application::ToggleAutostart() {
-    const bool enabled = !settings_.autostart_enabled;
-    if (!settings_store_.SetAutostart(enabled)) {
-        ::MessageBoxW(nullptr, L"Не удалось изменить автозапуск.",
-            kApplicationName, MB_OK | MB_ICONERROR);
-        return;
-    }
-    settings_.autostart_enabled = enabled;
-    static_cast<void>(settings_store_.Save(settings_));
-    ::MessageBoxW(nullptr,
-        enabled ? L"Автозапуск включён." : L"Автозапуск выключен.",
-        kApplicationName, MB_OK | MB_ICONINFORMATION);
 }
 
 void Application::HandleTrayCommand(const tray::TrayCommand command) {
@@ -420,17 +388,11 @@ void Application::HandleTrayCommand(const tray::TrayCommand command) {
     case tray::TrayCommand::open_image:
         OpenImage();
         break;
-    case tray::TrayCommand::choose_save_folder:
-        ChooseSaveFolder();
-        break;
     case tray::TrayCommand::open_save_folder:
         OpenSaveFolder();
         break;
-    case tray::TrayCommand::configure_hotkeys:
-        ConfigureHotkeys();
-        break;
-    case tray::TrayCommand::toggle_autostart:
-        ToggleAutostart();
+    case tray::TrayCommand::configure_settings:
+        ConfigureSettings(host_window_);
         break;
     case tray::TrayCommand::exit_application:
         ExitApplication();
@@ -508,6 +470,12 @@ LRESULT Application::HandleMessage(
         return 0;
     case messages::kEditorClosed:
         editors_.erase(reinterpret_cast<HWND>(w_param));
+        return 0;
+    case messages::kShowInfo:
+        ShowInfoDialog(instance_, reinterpret_cast<HWND>(w_param));
+        return 0;
+    case messages::kShowSettings:
+        ConfigureSettings(reinterpret_cast<HWND>(w_param));
         return 0;
     case WM_HOTKEY:
         if (w_param == kCaptureHotkey) {
