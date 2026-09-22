@@ -95,6 +95,7 @@ private:
     HWND host_{};
     HWND window_{};
     HWND panel_{};
+    HWND footer_{};
     HWND fit_button_{};
     HWND zoom_label_{};
     HWND actual_size_button_{};
@@ -102,7 +103,7 @@ private:
     int panel_scroll_{};
     int panel_scroll_max_{};
     bool laying_out_{};
-    bool allow_fit_upscale_{};
+    bool allow_fit_upscale_{true};
     HWND copy_button_{};
     HWND save_button_{};
     HWND info_button_{};

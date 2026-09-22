@@ -110,7 +110,7 @@ int ActionIconResourceId(const int control_id) noexcept {
 
 const wchar_t* ActionButtonLabel(const int control_id) noexcept {
     switch (control_id) {
-    case kCopyButton: return L"Копировать";
+    case kCopyButton: return L"Копировать в буфер\nи закрыть";
     case kSaveButton: return L"Сохранить";
     case kApplyCropButton: return L"Применить";
     case kCancelCropButton: return L"Отмена";
@@ -347,14 +347,12 @@ bool EditorWindow::CreateNativeWindow() {
     const UINT dpi = probe != nullptr ? ::GetDpiForWindow(probe) : 96;
     if (probe != nullptr) ::DestroyWindow(probe);
     const auto dip = [dpi](int value) { return platform::DipToPixels(value, dpi); };
-    RECT frame{0, 0, 0, 0};
-    ::AdjustWindowRectExForDpi(&frame, WS_OVERLAPPEDWINDOW, FALSE, 0, dpi);
     const platform::PixelSize desired{
-        session_.model.source().width + dip(kToolPanelWidthDip + 32) + frame.right - frame.left,
-        std::max(session_.model.source().height + dip(24), dip(600)) + frame.bottom - frame.top,
+        ::MulDiv(work_area.width(), 65, 100),
+        ::MulDiv(work_area.height(), 65, 100),
     };
     const platform::PixelRect placement = platform::FitCenteredRect(
-        desired, {dip(540), dip(420)}, {work_area.width(), work_area.height()}, work_area);
+        desired, {dip(480), dip(320)}, {work_area.width(), work_area.height()}, work_area);
     window_ = ::CreateWindowExW(
         0,
         kWindowClass,
@@ -386,6 +384,11 @@ void EditorWindow::CreateControls() {
         WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 0, 0, 0, 0,
         window_, nullptr, instance_, nullptr);
     ::SetWindowSubclass(panel_, &EditorWindow::PanelProcedure, 1,
+        reinterpret_cast<DWORD_PTR>(this));
+    footer_ = ::CreateWindowExW(WS_EX_CONTROLPARENT, L"STATIC", L"",
+        WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 0, 0, 0, 0,
+        window_, nullptr, instance_, nullptr);
+    ::SetWindowSubclass(footer_, &EditorWindow::PanelProcedure, 1,
         reinterpret_cast<DWORD_PTR>(this));
     const auto create_tool = [this](const wchar_t* label, const int command) {
         const HWND button = ::CreateWindowExW(
@@ -456,12 +459,12 @@ void EditorWindow::CreateControls() {
         0, 0, 0, 0, window_,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCancelCropButton)), instance_, nullptr);
     copy_button_ = ::CreateWindowExW(
-        0, L"BUTTON", L"Копировать", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
-        0, 0, 0, 0, panel_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCopyButton)),
+        0, L"BUTTON", L"Копировать в буфер обмена и закрыть", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
+        0, 0, 0, 0, footer_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCopyButton)),
         instance_, nullptr);
     save_button_ = ::CreateWindowExW(
         0, L"BUTTON", L"Сохранить", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
-        0, 0, 0, 0, panel_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSaveButton)),
+        0, 0, 0, 0, footer_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSaveButton)),
         instance_, nullptr);
     const HWND action_buttons[]{
         apply_crop_button_, cancel_crop_button_, copy_button_, save_button_,
@@ -492,6 +495,7 @@ void EditorWindow::CreateControls() {
             };
             ::SendMessageW(tooltip, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&info));
         };
+        add_tooltip(copy_button_, const_cast<wchar_t*>(L"Копировать снимок в буфер обмена и закрыть редактор"));
         add_tooltip(info_button_, const_cast<wchar_t*>(L"Информация"));
         add_tooltip(settings_button_, const_cast<wchar_t*>(L"Настройки"));
         add_tooltip(bold_button_, const_cast<wchar_t*>(L"Полужирный"));
@@ -547,16 +551,20 @@ void EditorWindow::LayoutControls() {
     const UINT dpi = ::GetDpiForWindow(window_);
     const auto dip = [dpi](int value) { return platform::DipToPixels(value, dpi); };
     const int panel_width = dip(kToolPanelWidthDip);
-    ::MoveWindow(panel_, client.right - panel_width, 0, panel_width, client.bottom, TRUE);
+    const int footer_height = dip(114);
+    const int panel_height = std::max(0, static_cast<int>(client.bottom) - footer_height);
+    ::MoveWindow(panel_, client.right - panel_width, 0, panel_width, panel_height, TRUE);
+    ::MoveWindow(footer_, client.right - panel_width, panel_height,
+        panel_width, footer_height, TRUE);
     const bool colors = (::GetWindowLongPtrW(red_button_, GWL_STYLE) & WS_VISIBLE) != 0;
     const bool text = (::GetWindowLongPtrW(font_size_combo_, GWL_STYLE) & WS_VISIBLE) != 0;
     const int inset = dip(8), gap = dip(4), height = dip(38);
-    const int content_height = dip(24) + inset * 5 + height * 13 + gap * 9 +
+    const int content_height = dip(24) + inset * 4 + height * 11 + gap * 8 +
         (colors ? height + gap : 0) + (text ? height + gap : 0);
-    panel_scroll_max_ = std::max(0, content_height - static_cast<int>(client.bottom));
+    panel_scroll_max_ = std::max(0, content_height - panel_height);
     panel_scroll_ = std::clamp(panel_scroll_, 0, panel_scroll_max_);
     SCROLLINFO scroll{sizeof(SCROLLINFO), SIF_RANGE | SIF_PAGE | SIF_POS,
-        0, content_height - 1, static_cast<UINT>(std::max(0L, client.bottom)), panel_scroll_, 0};
+        0, content_height - 1, static_cast<UINT>(panel_height), panel_scroll_, 0};
     ::SetScrollInfo(panel_, SB_VERT, &scroll, TRUE);
     RECT panel_client{};
     ::GetClientRect(panel_, &panel_client);
@@ -611,13 +619,12 @@ void EditorWindow::LayoutControls() {
     const int half = (width - gap) / 2;
     place(actual_size_button_, inset, y, half, height);
     place(fit_button_, inset + half + gap, y, width - half - gap, height);
-    y += height + inset;
-    place(copy_button_, inset, y, width, height);
-    y += height + gap;
-    place(save_button_, inset, y, width, height);
-    for (HWND control : {copy_button_, save_button_}) {
-        SetRoundedButtonRegion(control, width, height, dpi);
-    }
+    const int action_width = panel_width - inset * 2;
+    const int copy_height = dip(54);
+    place(copy_button_, inset, inset, action_width, copy_height);
+    place(save_button_, inset, inset + copy_height + dip(6), action_width, height);
+    SetRoundedButtonRegion(copy_button_, action_width, copy_height, dpi);
+    SetRoundedButtonRegion(save_button_, action_width, height, dpi);
     LayoutCropActions();
     laying_out_ = false;
 }
@@ -811,9 +818,17 @@ void EditorWindow::DrawActionButton(const DRAWITEMSTRUCT& item) const {
     ::SetTextColor(item.hDC, disabled ? RGB(142, 148, 156) : RGB(39, 47, 58));
     HGDIOBJ old_font = ::SelectObject(item.hDC,
         reinterpret_cast<HFONT>(::SendMessageW(item.hwndItem, WM_GETFONT, 0, 0)));
-    ::DrawTextW(item.hDC, label, -1, &content,
-        (resource_id == 0 ? DT_CENTER : DT_LEFT) |
-        DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    if (item.CtlID == kCopyButton) {
+        content.right -= platform::DipToPixels(8, dpi);
+        RECT measured{0, 0, content.right - content.left, 0};
+        ::DrawTextW(item.hDC, label, -1, &measured, DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX);
+        content.top += std::max(0L, (content.bottom - content.top - measured.bottom) / 2);
+        ::DrawTextW(item.hDC, label, -1, &content, DT_LEFT | DT_WORDBREAK | DT_NOPREFIX);
+    } else {
+        ::DrawTextW(item.hDC, label, -1, &content,
+            (resource_id == 0 ? DT_CENTER : DT_LEFT) |
+            DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    }
     ::SelectObject(item.hDC, old_font);
     if ((item.itemState & ODS_FOCUS) != 0) {
         RECT focus = item.rcItem;
