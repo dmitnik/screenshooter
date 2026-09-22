@@ -1205,8 +1205,6 @@ void EditorWindow::Paint() {
     wchar_t previous_zoom[64]{};
     ::GetWindowTextW(zoom_label_, previous_zoom, 64);
     if (zoom_text != previous_zoom) ::SetWindowTextW(zoom_label_, zoom_text.c_str());
-    LayoutCropActions();
-
     BITMAPINFO bitmap_info{};
     bitmap_info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
     bitmap_info.bmiHeader.biWidth = rendered.width;
@@ -1319,6 +1317,9 @@ void EditorWindow::Paint() {
         ::DeleteObject(crop_pen);
     }
     finish_paint();
+    // Moving children can repaint them immediately. Finish the canvas blit first,
+    // while its paint DC still clips the original child positions.
+    LayoutCropActions();
     if (!first_paint_logged_) {
         first_paint_logged_ = true;
         performance::LogMetric(
@@ -1388,12 +1389,33 @@ void EditorWindow::LayoutCropActions() const {
     if (actions.empty()) {
         return;
     }
-    ::MoveWindow(apply_crop_button_, actions.left, actions.top,
-        button_width, button_height, TRUE);
-    ::MoveWindow(cancel_crop_button_, actions.left + button_width + button_gap,
-        actions.top, button_width, button_height, TRUE);
-    SetRoundedButtonRegion(apply_crop_button_, button_width, button_height, dpi);
-    SetRoundedButtonRegion(cancel_crop_button_, button_width, button_height, dpi);
+    const auto place_button = [&](const HWND button, const int left) {
+        RECT previous{};
+        ::GetWindowRect(button, &previous);
+        ::MapWindowPoints(nullptr, window_, reinterpret_cast<POINT*>(&previous), 2);
+        const RECT next{left, actions.top, left + button_width, actions.top + button_height};
+        if (::EqualRect(&previous, &next)) {
+            return false;
+        }
+        const bool resized = previous.right - previous.left != button_width ||
+            previous.bottom - previous.top != button_height;
+        // Do not reuse old pixels: these controls move over a changing canvas.
+        ::SetWindowPos(button, nullptr, left, actions.top, button_width, button_height,
+            SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS);
+        if (resized) {
+            SetRoundedButtonRegion(button, button_width, button_height, dpi);
+        }
+        return true;
+    };
+    const bool apply_moved = place_button(apply_crop_button_, actions.left);
+    const bool cancel_moved = place_button(cancel_crop_button_, actions.left + button_width + button_gap);
+    if (apply_moved || cancel_moved) {
+        // Both positions must be final before repainting either sibling.
+        for (const HWND button : {apply_crop_button_, cancel_crop_button_}) {
+            ::RedrawWindow(button, nullptr, nullptr,
+                RDW_INVALIDATE | RDW_ERASE | RDW_UPDATENOW);
+        }
+    }
 }
 
 void EditorWindow::EnterCropMode() {
