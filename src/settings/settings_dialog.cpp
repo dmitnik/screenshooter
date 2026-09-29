@@ -287,6 +287,20 @@ std::optional<Settings> ShowSettingsDialog(
             }
             break;
         }
+        if (message.message == WM_HOTKEY) {
+            const HWND focused = ::GetFocus();
+            if (focused != nullptr && ::GetParent(focused) == window &&
+                (focused == ::GetDlgItem(window, kAreaControl) ||
+                 focused == ::GetDlgItem(window, kMonitorControl) ||
+                 focused == ::GetDlgItem(window, kWindowControl))) {
+                // Registered combinations arrive as WM_HOTKEY instead of normal
+                // key input. Record them here without dispatching a capture command.
+                const HotkeyBinding binding{
+                    LOWORD(message.lParam), HIWORD(message.lParam)};
+                ::SendMessageW(focused, HKM_SETHOTKEY, ToControlHotkey(binding), 0);
+                continue;
+            }
+        }
         if (!::IsDialogMessageW(window, &message)) {
             ::TranslateMessage(&message);
             ::DispatchMessageW(&message);
