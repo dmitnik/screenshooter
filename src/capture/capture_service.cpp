@@ -1,3 +1,4 @@
+#include "localization/strings.h"
 #include "capture/capture_service.h"
 
 #include <windows.h>
@@ -94,7 +95,7 @@ CaptureOutcome CaptureService::CaptureVirtualDesktop() const {
     if (auto frame = CaptureWithGdi()) {
         return {std::move(frame), {}};
     }
-    return {std::nullopt, L"Не удалось получить изображение рабочего стола."};
+    return {std::nullopt, i18n::Text(i18n::Id::capture_error)};
 }
 
 std::optional<CaptureFrame> CaptureService::CaptureWithDesktopDuplication() const {

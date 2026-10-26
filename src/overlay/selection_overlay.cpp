@@ -1,3 +1,4 @@
+#include "localization/strings.h"
 #include "overlay/selection_overlay.h"
 
 #include "app/messages.h"
@@ -76,7 +77,7 @@ bool SelectionOverlay::CreateNativeWindow() {
     window_ = ::CreateWindowExW(
         WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
         kOverlayClass,
-        L"Выбор области — Screenshooter",
+        i18n::Text(i18n::Id::selection_title),
         WS_POPUP,
         bounds.left,
         bounds.top,
@@ -393,6 +394,9 @@ LRESULT SelectionOverlay::HandleMessage(
     const LPARAM l_param
 ) {
     switch (message) {
+    case i18n::kLanguageChanged:
+        ::SetWindowTextW(window_, i18n::Text(i18n::Id::selection_title));
+        return 0;
     case WM_LBUTTONDOWN:
         anchor_ = CursorPosition();
         cursor_ = anchor_;

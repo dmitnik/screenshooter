@@ -1,3 +1,4 @@
+#include "localization/strings.h"
 #include "export/share_service.h"
 
 #include "export/image_file_service.h"
@@ -102,7 +103,7 @@ bool ShareService::Show(const HWND owner, const capture::PixelBuffer& image) {
         impl_->token = impl_->manager.DataRequested(
             [reference](const DataTransferManager&, const DataRequestedEventArgs& event) {
                 auto package = event.Request().Data();
-                package.Properties().Title(L"Снимок Screenshooter");
+                package.Properties().Title(i18n::Text(i18n::Id::share_title));
                 package.SetBitmap(reference);
             }
         );

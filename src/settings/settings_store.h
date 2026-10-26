@@ -1,6 +1,7 @@
 #pragma once
 
 #include <windows.h>
+#include "localization/strings.h"
 
 #include <filesystem>
 #include <string>
@@ -16,6 +17,7 @@ struct HotkeyBinding {
 };
 
 struct Settings {
+    i18n::Language language{i18n::Language::english};
     bool hotkeys_enabled{true};
     bool autostart_enabled{false};
     std::filesystem::path save_folder;

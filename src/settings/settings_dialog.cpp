@@ -1,3 +1,4 @@
+#include "localization/strings.h"
 #include "settings/settings_dialog.h"
 
 #include <commctrl.h>
@@ -20,10 +21,18 @@ constexpr int kBrowseControl = 3006;
 constexpr int kAutostartControl = 3007;
 constexpr int kSaveControl = 3008;
 constexpr int kCancelControl = 3009;
+constexpr int kLanguageControl = 3010;
+constexpr int kHotkeysLabel = 3020;
+constexpr int kAreaLabel = 3021;
+constexpr int kMonitorLabel = 3022;
+constexpr int kWindowLabel = 3023;
+constexpr int kFolderLabel = 3024;
+constexpr int kLanguageLabel = 3025;
 
 struct DialogState {
     Settings settings;
     std::optional<Settings> result;
+    HFONT font{};
 };
 
 WORD ToControlHotkey(const HotkeyBinding binding) {
@@ -47,7 +56,7 @@ HotkeyBinding FromControlHotkey(const LRESULT value) {
 void SetFont(const HWND control) {
     if (control != nullptr) {
         ::SendMessageW(control, WM_SETFONT,
-            reinterpret_cast<WPARAM>(::GetStockObject(DEFAULT_GUI_FONT)), TRUE);
+            ::SendMessageW(::GetParent(control), WM_GETFONT, 0, 0), TRUE);
     }
 }
 
@@ -145,31 +154,49 @@ LRESULT CALLBACK DialogProcedure(
         state = static_cast<DialogState*>(create->lpCreateParams);
         ::SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(state));
     }
+    if (message == WM_GETFONT && state != nullptr) return reinterpret_cast<LRESULT>(state->font);
+    if (message == WM_DESTROY && state != nullptr) {
+        if (state->font != nullptr) ::DeleteObject(state->font);
+        state->font = nullptr;
+    }
     if (message == WM_CREATE && state != nullptr) {
-        AddControl(window, L"STATIC", L"Горячие клавиши", SS_LEFT, 20, 16, 440, 22, 0);
-        HWND enabled = AddControl(window, L"BUTTON", L"Включить глобальные горячие клавиши",
-            BS_AUTOCHECKBOX | WS_TABSTOP, 20, 44, 440, 24, kEnabledControl);
-        AddControl(window, L"STATIC", L"Снимок области:", 0, 36, 80, 165, 22, 0);
+        state->font = ::CreateFontW(-::MulDiv(10, ::GetDpiForWindow(window), 72),
+            0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+            OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+            DEFAULT_PITCH, L"Segoe UI");
+        AddControl(window, L"STATIC", i18n::Text(i18n::Id::hotkeys), SS_LEFT, 20, 16, 520, 22, kHotkeysLabel);
+        HWND enabled = AddControl(window, L"BUTTON", i18n::Text(i18n::Id::enable_hotkeys),
+            BS_AUTOCHECKBOX | WS_TABSTOP, 20, 44, 520, 24, kEnabledControl);
+        AddControl(window, L"STATIC", i18n::Text(i18n::Id::area_label), 0, 36, 80, 200, 22, kAreaLabel);
         AddControl(window, HOTKEY_CLASSW, L"", WS_TABSTOP | WS_BORDER,
-            210, 76, 250, 25, kAreaControl);
-        AddControl(window, L"STATIC", L"Монитор под курсором:", 0, 36, 116, 165, 22, 0);
+            250, 76, 290, 25, kAreaControl);
+        AddControl(window, L"STATIC", i18n::Text(i18n::Id::monitor_label), 0, 36, 116, 200, 22, kMonitorLabel);
         AddControl(window, HOTKEY_CLASSW, L"", WS_TABSTOP | WS_BORDER,
-            210, 112, 250, 25, kMonitorControl);
-        AddControl(window, L"STATIC", L"Окно под курсором:", 0, 36, 152, 165, 22, 0);
+            250, 112, 290, 25, kMonitorControl);
+        AddControl(window, L"STATIC", i18n::Text(i18n::Id::window_label), 0, 36, 152, 200, 22, kWindowLabel);
         AddControl(window, HOTKEY_CLASSW, L"", WS_TABSTOP | WS_BORDER,
-            210, 148, 250, 25, kWindowControl);
-        AddControl(window, L"STATIC", L"Папка сохранения", SS_LEFT, 20, 194, 440, 22, 0);
+            250, 148, 290, 25, kWindowControl);
+        AddControl(window, L"STATIC", i18n::Text(i18n::Id::save_folder), SS_LEFT, 20, 194, 520, 22, kFolderLabel);
         AddControl(window, L"EDIT", state->settings.save_folder.c_str(),
             WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL | ES_READONLY,
-            20, 222, 342, 25, kFolderControl);
-        AddControl(window, L"BUTTON", L"Обзор…", WS_TABSTOP,
-            370, 220, 90, 29, kBrowseControl);
-        HWND autostart = AddControl(window, L"BUTTON", L"Запускать Screenshooter при входе в Windows",
-            BS_AUTOCHECKBOX | WS_TABSTOP, 20, 270, 440, 24, kAutostartControl);
-        AddControl(window, L"BUTTON", L"Сохранить", BS_DEFPUSHBUTTON | WS_TABSTOP,
-            276, 316, 88, 30, kSaveControl);
-        AddControl(window, L"BUTTON", L"Отмена", WS_TABSTOP,
-            372, 316, 88, 30, kCancelControl);
+            20, 222, 410, 25, kFolderControl);
+        AddControl(window, L"BUTTON", i18n::Text(i18n::Id::browse), WS_TABSTOP,
+            438, 220, 102, 29, kBrowseControl);
+        HWND autostart = AddControl(window, L"BUTTON", i18n::Text(i18n::Id::autostart),
+            BS_AUTOCHECKBOX | WS_TABSTOP, 20, 270, 520, 24, kAutostartControl);
+        AddControl(window, L"STATIC", i18n::Text(i18n::Id::language),
+            SS_LEFT, 20, 322, 218, 24, kLanguageLabel);
+        HWND language = AddControl(window, WC_COMBOBOXW, L"",
+            CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, 250, 318, 290, 160, kLanguageControl);
+        ::SendMessageW(language, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"English"));
+        ::SendMessageW(language, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Русский"));
+        ::SendMessageW(language, CB_SETCURSEL,
+            state->settings.language == i18n::Language::russian ? 1 : 0, 0);
+
+        AddControl(window, L"BUTTON", i18n::Text(i18n::Id::save), BS_DEFPUSHBUTTON | WS_TABSTOP,
+            304, 382, 114, 32, kSaveControl);
+        AddControl(window, L"BUTTON", i18n::Text(i18n::Id::cancel), WS_TABSTOP,
+            426, 382, 114, 32, kCancelControl);
 
         ::SendDlgItemMessageW(window, kAreaControl, HKM_SETHOTKEY,
             ToControlHotkey(state->settings.area_hotkey), 0);
@@ -184,7 +211,28 @@ LRESULT CALLBACK DialogProcedure(
         UpdateHotkeyEnabledState(window);
         return 0;
     }
+    if (message == i18n::kLanguageChanged) {
+        ::SetWindowTextW(window, i18n::Text(i18n::Id::settings_title));
+        ::SetDlgItemTextW(window, kHotkeysLabel, i18n::Text(i18n::Id::hotkeys));
+        ::SetDlgItemTextW(window, kAreaLabel, i18n::Text(i18n::Id::area_label));
+        ::SetDlgItemTextW(window, kMonitorLabel, i18n::Text(i18n::Id::monitor_label));
+        ::SetDlgItemTextW(window, kWindowLabel, i18n::Text(i18n::Id::window_label));
+        ::SetDlgItemTextW(window, kFolderLabel, i18n::Text(i18n::Id::save_folder));
+        ::SetDlgItemTextW(window, kLanguageLabel, i18n::Text(i18n::Id::language));
+        ::SetDlgItemTextW(window, kEnabledControl, i18n::Text(i18n::Id::enable_hotkeys));
+        ::SetDlgItemTextW(window, kAutostartControl, i18n::Text(i18n::Id::autostart));
+        ::SetDlgItemTextW(window, kBrowseControl, i18n::Text(i18n::Id::browse));
+        ::SetDlgItemTextW(window, kSaveControl, i18n::Text(i18n::Id::save));
+        ::SetDlgItemTextW(window, kCancelControl, i18n::Text(i18n::Id::cancel));
+        return 0;
+    }
     if (message == WM_COMMAND && state != nullptr) {
+        if (LOWORD(w_param) == kLanguageControl && HIWORD(w_param) == CBN_SELCHANGE) {
+            state->settings.language = ::SendDlgItemMessageW(window, kLanguageControl,
+                CB_GETCURSEL, 0, 0) == 1 ? i18n::Language::russian : i18n::Language::english;
+            i18n::SetLanguage(state->settings.language);
+            return 0;
+        }
         const int command = LOWORD(w_param);
         if (command == kCancelControl || command == IDCANCEL) {
             ::DestroyWindow(window);
@@ -220,8 +268,8 @@ LRESULT CALLBACK DialogProcedure(
             if (validation != SettingsValidationError::none) {
                 ::MessageBoxW(window,
                     validation == SettingsValidationError::missing_hotkey
-                        ? L"Задайте все три сочетания."
-                        : L"Сочетания не должны повторяться.",
+                        ? i18n::Text(i18n::Id::missing_hotkeys)
+                        : i18n::Text(i18n::Id::duplicate_hotkeys),
                     L"Screenshooter", MB_OK | MB_ICONWARNING);
                 return 0;
             }
@@ -259,11 +307,11 @@ std::optional<Settings> ShowSettingsDialog(
 
     DialogState state{.settings = current};
     const UINT dpi = owner != nullptr ? ::GetDpiForWindow(owner) : 96;
-    RECT bounds{0, 0, ::MulDiv(500, dpi, 96), ::MulDiv(390, dpi, 96)};
+    RECT bounds{0, 0, ::MulDiv(560, dpi, 96), ::MulDiv(438, dpi, 96)};
     ::AdjustWindowRectExForDpi(
         &bounds, WS_CAPTION | WS_SYSMENU, FALSE, WS_EX_DLGMODALFRAME, dpi);
     HWND window = ::CreateWindowExW(WS_EX_DLGMODALFRAME, kWindowClass,
-        L"Настройки Screenshooter", WS_CAPTION | WS_SYSMENU,
+        i18n::Text(i18n::Id::settings_title), WS_CAPTION | WS_SYSMENU,
         CW_USEDEFAULT, CW_USEDEFAULT, bounds.right - bounds.left, bounds.bottom - bounds.top,
         owner, nullptr, instance, &state);
     if (window == nullptr) {
@@ -277,6 +325,7 @@ std::optional<Settings> ShowSettingsDialog(
     }
     ::ShowWindow(window, SW_SHOW);
     ::SetForegroundWindow(window);
+    ::SetFocus(::GetDlgItem(window, kEnabledControl));
 
     MSG message{};
     while (::IsWindow(window)) {
@@ -310,6 +359,7 @@ std::optional<Settings> ShowSettingsDialog(
         ::EnableWindow(owner, TRUE);
         ::SetForegroundWindow(owner);
     }
+    i18n::SetLanguage(current.language);
     return state.result;
 }
 

@@ -1,3 +1,4 @@
+#include "localization/strings.h"
 #include "app/application.h"
 
 #include "app/info_dialog.h"
@@ -41,6 +42,7 @@ Application::~Application() {
 int Application::Run(const int) {
     exporting::ShareService::CleanupOldFiles();
     settings_ = settings_store_.Load();
+    i18n::SetLanguage(settings_.language);
     INITCOMMONCONTROLSEX controls{
         .dwSize = sizeof(INITCOMMONCONTROLSEX),
         .dwICC = ICC_STANDARD_CLASSES | ICC_HOTKEY_CLASS,
@@ -49,20 +51,19 @@ int Application::Run(const int) {
 
     taskbar_created_message_ = ::RegisterWindowMessageW(L"TaskbarCreated");
     if (!RegisterHostWindowClass() || !CreateHostWindow()) {
-        ::MessageBoxW(nullptr, L"Не удалось запустить приложение.",
+        ::MessageBoxW(nullptr, i18n::Text(i18n::Id::startup_error),
             kApplicationName, MB_OK | MB_ICONERROR);
         return 1;
     }
     if (!tray_.Initialize(host_window_, messages::kTrayCallback)) {
-        ::MessageBoxW(nullptr, L"Не удалось создать значок в области уведомлений.",
+        ::MessageBoxW(nullptr, i18n::Text(i18n::Id::tray_error),
             kApplicationName, MB_OK | MB_ICONERROR);
         ::DestroyWindow(host_window_);
         return 1;
     }
     if (!RegisterConfiguredHotkeys(settings_)) {
         ::MessageBoxW(nullptr,
-            L"Одно или несколько сочетаний заняты другим приложением.\n"
-            L"Доступные режимы можно запустить через значок Screenshooter в трее.",
+            i18n::Text(i18n::Id::hotkeys_busy),
             kApplicationName,
             MB_OK | MB_ICONWARNING);
     }
@@ -179,7 +180,7 @@ void Application::StartCapture(const CaptureRequest request) {
         ::GetWindowThreadProcessId(target, &process_id);
         if (target == nullptr || process_id == ::GetCurrentProcessId() ||
             !::IsWindowVisible(target) || ::IsIconic(target)) {
-            ::MessageBoxW(nullptr, L"Под курсором нет доступного окна.",
+            ::MessageBoxW(nullptr, i18n::Text(i18n::Id::no_window),
                 kApplicationName, MB_OK | MB_ICONINFORMATION);
             return;
         }
@@ -223,7 +224,7 @@ void Application::HandleCaptureReady(const WPARAM payload) {
         capture_state_ = CaptureState::idle;
         const wchar_t* details = outcome != nullptr && !outcome->error.empty()
             ? outcome->error.c_str()
-            : L"Неизвестная ошибка захвата.";
+            : i18n::Text(i18n::Id::capture_unknown);
         ::MessageBoxW(nullptr, details, kApplicationName, MB_OK | MB_ICONERROR);
         return;
     }
@@ -253,7 +254,7 @@ void Application::HandleCaptureReady(const WPARAM payload) {
     ));
     if (overlay_ == nullptr) {
         capture_state_ = CaptureState::idle;
-        ::MessageBoxW(nullptr, L"Не удалось открыть выбор области.",
+        ::MessageBoxW(nullptr, i18n::Text(i18n::Id::selection_error),
             kApplicationName, MB_OK | MB_ICONERROR);
         return;
     }
@@ -278,7 +279,7 @@ void Application::CreateEditor(capture::PixelBuffer image) {
         instance_, host_window_, editor::CreateSession(std::move(image))
     );
     if (editor == nullptr) {
-        ::MessageBoxW(nullptr, L"Не удалось открыть снимок.",
+        ::MessageBoxW(nullptr, i18n::Text(i18n::Id::editor_error),
             kApplicationName, MB_OK | MB_ICONERROR);
         return;
     }
@@ -293,8 +294,8 @@ void Application::OpenImage() {
         return;
     }
     const COMDLG_FILTERSPEC filters[]{
-        {L"Изображения", L"*.png;*.jpg;*.jpeg;*.bmp;*.webp"},
-        {L"Все файлы", L"*.*"},
+        {i18n::Text(i18n::Id::images), L"*.png;*.jpg;*.jpeg;*.bmp;*.webp"},
+        {i18n::Text(i18n::Id::all_files), L"*.*"},
     };
     dialog->SetFileTypes(ARRAYSIZE(filters), filters);
     const HRESULT shown = dialog->Show(host_window_);
@@ -312,7 +313,7 @@ void Application::OpenImage() {
     if (image.has_value()) {
         CreateEditor(std::move(*image));
     } else {
-        ::MessageBoxW(nullptr, L"Формат изображения не поддерживается.",
+        ::MessageBoxW(nullptr, i18n::Text(i18n::Id::unsupported_image),
             kApplicationName, MB_OK | MB_ICONERROR);
     }
 }
@@ -325,7 +326,7 @@ void Application::OpenSaveFolder() {
         const auto result = reinterpret_cast<INT_PTR>(::ShellExecuteW(
             nullptr, L"open", settings_.save_folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
         if (result <= 32) {
-            ::MessageBoxW(nullptr, L"Не удалось открыть папку сохранения.",
+            ::MessageBoxW(nullptr, i18n::Text(i18n::Id::folder_error),
                 kApplicationName, MB_OK | MB_ICONERROR);
         }
     }
@@ -342,7 +343,7 @@ void Application::ConfigureSettings(const HWND owner) {
     if (!RegisterConfiguredHotkeys(*proposed)) {
         static_cast<void>(RegisterConfiguredHotkeys(previous));
         ::MessageBoxW(owner,
-            L"Одно из выбранных сочетаний уже занято. Старые настройки сохранены.",
+            i18n::Text(i18n::Id::hotkey_busy),
             kApplicationName, MB_OK | MB_ICONWARNING);
         return;
     }
@@ -353,7 +354,7 @@ void Application::ConfigureSettings(const HWND owner) {
         static_cast<void>(settings_store_.SetAutostart(previous.autostart_enabled));
         UnregisterHotkeys();
         static_cast<void>(RegisterConfiguredHotkeys(previous));
-        ::MessageBoxW(owner, L"Не удалось изменить автозапуск. Старые настройки сохранены.",
+        ::MessageBoxW(owner, i18n::Text(i18n::Id::autostart_error),
             kApplicationName, MB_OK | MB_ICONERROR);
         return;
     }
@@ -364,11 +365,12 @@ void Application::ConfigureSettings(const HWND owner) {
             static_cast<void>(settings_store_.SetAutostart(previous.autostart_enabled));
         }
         static_cast<void>(settings_store_.Save(previous));
-        ::MessageBoxW(owner, L"Не удалось сохранить настройки. Старые значения восстановлены.",
+        ::MessageBoxW(owner, i18n::Text(i18n::Id::settings_error),
             kApplicationName, MB_OK | MB_ICONERROR);
         return;
     }
     settings_ = *proposed;
+    i18n::SetLanguage(settings_.language);
 }
 
 void Application::HandleTrayCommand(const tray::TrayCommand command) {

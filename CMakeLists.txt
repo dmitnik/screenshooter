@@ -26,6 +26,7 @@ add_library(screenshooter_core STATIC
     src/platform/explorer_service.cpp
     src/platform/geometry.cpp
     src/performance/metrics.cpp
+    src/localization/strings.cpp
     src/settings/settings_store.cpp
 )
 
@@ -181,4 +182,21 @@ if(BUILD_TESTING AND SCREENSHOOTER_BUILD_TESTS)
 
     screenshooter_configure_target(integration_tests)
     catch_discover_tests(integration_tests)
+endif()
+
+# Run explicitly in an interactive desktop session; never part of unattended CTest.
+if(BUILD_TESTING AND SCREENSHOOTER_BUILD_TESTS)
+    add_executable(localization_ui_smoke EXCLUDE_FROM_ALL
+        tests/integration/localization_ui_smoke.cpp
+        src/editor/editor_window.cpp
+        src/editor/document_session.cpp
+        src/settings/settings_dialog.cpp
+        resources/app.rc
+    )
+    target_include_directories(localization_ui_smoke PRIVATE resources)
+    target_link_libraries(localization_ui_smoke PRIVATE screenshooter_core comctl32 d2d1 dwrite dwmapi shcore)
+    screenshooter_configure_target(localization_ui_smoke)
+    if(MSVC)
+        target_link_options(localization_ui_smoke PRIVATE /MANIFEST:NO)
+    endif()
 endif()

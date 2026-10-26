@@ -1,3 +1,4 @@
+#include "localization/strings.h"
 #include "app/info_dialog.h"
 
 namespace screenshooter::app {
@@ -5,32 +6,7 @@ namespace {
 
 constexpr wchar_t kWindowClass[] = L"Screenshooter.Information";
 constexpr int kCloseControl = 4001;
-constexpr wchar_t kInstructions[] =
-    L"БЫСТРЫЙ СТАРТ\r\n"
-    L"Откройте меню значка Screenshooter в трее, выберите режим захвата, "
-    L"отредактируйте снимок и нажмите «Копировать» или «Сохранить».\r\n\r\n"
-    L"РЕЖИМЫ ЗАХВАТА\r\n"
-    L"Доступны снимок области, окна под курсором, монитора под курсором и всех мониторов. "
-    L"Те же действия можно запускать настроенными глобальными горячими клавишами.\r\n\r\n"
-    L"ИНСТРУМЕНТЫ РЕДАКТОРА\r\n"
-    L"Прямоугольник, эллипс, линия, стрелка, маркер, текст, размытие, обрезка и выбор. "
-    L"Для фигур и текста доступны красный, зелёный, синий и чёрный цвета. Для текста также "
-    L"можно выбрать размер, полужирное, курсивное и подчёркнутое начертание. "
-    L"Двойной щелчок по существующему тексту возобновляет его редактирование.\r\n\r\n"
-    L"SHIFT\r\n"
-    L"Shift превращает прямоугольник в квадрат и эллипс в круг, фиксирует линию и стрелку "
-    L"с шагом 45°, выпрямляет маркер и сохраняет пропорции вставленного изображения. "
-    L"Shift можно нажать или отпустить прямо во время изменения размера.\r\n\r\n"
-    L"ВЫДЕЛЕНИЕ И ИСТОРИЯ\r\n"
-    L"Выделенный объект можно перемещать, изменять за управляющие точки и удалять клавишами "
-    L"Delete, Backspace или Esc. Ctrl+Z отменяет действие, Ctrl+Y повторяет его.\r\n\r\n"
-    L"БУФЕР ОБМЕНА И ФАЙЛЫ\r\n"
-    L"Ctrl+C копирует выделенный объект, а без выделения копирует готовый снимок и закрывает окно. "
-    L"Ctrl+X вырезает объект, Ctrl+V вставляет объект или изображение из системного буфера. "
-    L"Изображение также можно перетащить в редактор.\r\n\r\n"
-    L"СОХРАНЕНИЕ\r\n"
-    L"«Сохранить» открывает системный диалог PNG/JPEG. Папка по умолчанию, горячие клавиши "
-    L"и автозапуск настраиваются кнопкой с шестерёнкой или пунктом «Настройки…» в трее.";
+
 
 LRESULT CALLBACK InfoProcedure(
     const HWND window,
@@ -38,17 +14,23 @@ LRESULT CALLBACK InfoProcedure(
     const WPARAM w_param,
     const LPARAM l_param
 ) {
+    if (message == i18n::kLanguageChanged) {
+        ::SetWindowTextW(window, i18n::Text(i18n::Id::info_title));
+        ::SetDlgItemTextW(window, 4002, i18n::Text(i18n::Id::instructions));
+        ::SetDlgItemTextW(window, kCloseControl, i18n::Text(i18n::Id::close));
+        return 0;
+    }
     if (message == WM_CREATE) {
         const HINSTANCE instance = reinterpret_cast<HINSTANCE>(
             ::GetWindowLongPtrW(window, GWLP_HINSTANCE));
         const UINT dpi = ::GetDpiForWindow(window);
         const auto scaled = [dpi](const int value) { return ::MulDiv(value, dpi, 96); };
-        HWND text = ::CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", kInstructions,
+        HWND text = ::CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", i18n::Text(i18n::Id::instructions),
             WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_LEFT | ES_MULTILINE |
                 ES_AUTOVSCROLL | ES_READONLY,
             scaled(16), scaled(16), scaled(528), scaled(384),
-            window, nullptr, instance, nullptr);
-        HWND close = ::CreateWindowExW(0, L"BUTTON", L"Закрыть",
+            window, reinterpret_cast<HMENU>(4002), instance, nullptr);
+        HWND close = ::CreateWindowExW(0, L"BUTTON", i18n::Text(i18n::Id::close),
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
             scaled(444), scaled(414), scaled(100), scaled(30), window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCloseControl)), instance, nullptr);
@@ -102,7 +84,7 @@ void ShowInfoDialog(const HINSTANCE instance, const HWND owner) {
             : RECT{0, 0, ::GetSystemMetrics(SM_CXSCREEN), ::GetSystemMetrics(SM_CYSCREEN)};
     }
     HWND window = ::CreateWindowExW(WS_EX_DLGMODALFRAME, kWindowClass,
-        L"Информация о Screenshooter", WS_CAPTION | WS_SYSMENU,
+        i18n::Text(i18n::Id::info_title), WS_CAPTION | WS_SYSMENU,
         anchor.left + ((anchor.right - anchor.left - width) / 2),
         anchor.top + ((anchor.bottom - anchor.top - height) / 2),
         width, height, owner, nullptr, instance, nullptr);

@@ -37,6 +37,7 @@ private:
     [[nodiscard]] bool CreateNativeWindow();
     void CreateControls();
     void UpdateUiFont();
+    void RefreshLanguage();
     void ScrollPanel(int position);
     static LRESULT CALLBACK PanelProcedure(HWND, UINT, WPARAM, LPARAM, UINT_PTR, DWORD_PTR);
     void LayoutControls();
@@ -109,6 +110,7 @@ private:
     HWND save_button_{};
     HWND info_button_{};
     HWND settings_button_{};
+    HWND tooltip_{};
     HWND select_button_{};
     HWND rectangle_button_{};
     HWND line_button_{};

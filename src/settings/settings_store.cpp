@@ -88,6 +88,8 @@ Settings SettingsStore::Load() const {
     }
     const DWORD schema = ReadDword(key, L"SchemaVersion", 1);
     if (schema == 1 || schema == kSchemaVersion) {
+        settings.language = ReadDword(key, L"Language", 0) == 1
+            ? i18n::Language::russian : i18n::Language::english;
         settings.hotkeys_enabled = ReadDword(key, L"HotkeysEnabled", 1) != 0;
         settings.autostart_enabled = ReadDword(key, L"AutostartEnabled", 0) != 0;
         settings.save_folder = ReadString(key, L"SaveFolder");
@@ -112,6 +114,7 @@ bool SettingsStore::Save(const Settings& settings) const {
     static_cast<void>(disposition);
     const std::wstring folder = settings.save_folder.wstring();
     const bool saved = WriteDword(key, L"SchemaVersion", kSchemaVersion) &&
+        WriteDword(key, L"Language", settings.language == i18n::Language::russian ? 1U : 0U) &&
         WriteDword(key, L"HotkeysEnabled", settings.hotkeys_enabled ? 1U : 0U) &&
         WriteDword(key, L"AutostartEnabled", settings.autostart_enabled ? 1U : 0U) &&
         WriteDword(key, L"AreaHotkey", PackHotkey(settings.area_hotkey)) &&

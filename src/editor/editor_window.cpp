@@ -1,3 +1,4 @@
+#include "localization/strings.h"
 #include "editor/editor_window.h"
 
 #include "app/messages.h"
@@ -110,13 +111,13 @@ int ActionIconResourceId(const int control_id) noexcept {
 
 const wchar_t* ActionButtonLabel(const int control_id) noexcept {
     switch (control_id) {
-    case kCopyButton: return L"Копировать в буфер\nи закрыть";
-    case kSaveButton: return L"Сохранить";
-    case kApplyCropButton: return L"Применить";
-    case kCancelCropButton: return L"Отмена";
+    case kCopyButton: return i18n::Text(i18n::Id::copy);
+    case kSaveButton: return i18n::Text(i18n::Id::save);
+    case kApplyCropButton: return i18n::Text(i18n::Id::apply);
+    case kCancelCropButton: return i18n::Text(i18n::Id::cancel);
     case kInfoButton: return L"";
-    case kSettingsButton: return L"Настройки";
-    case kFitButton: return L"Вписать";
+    case kSettingsButton: return i18n::Text(i18n::Id::settings);
+    case kFitButton: return i18n::Text(i18n::Id::fit);
     case kActualSizeButton: return L"100%";
     default: return L"";
     }
@@ -411,34 +412,34 @@ void EditorWindow::CreateControls() {
             reinterpret_cast<WPARAM>(::GetStockObject(DEFAULT_GUI_FONT)), TRUE);
         return button;
     };
-    rectangle_button_ = create_tool(L"Прямоугольник", kRectangleButton);
-    ellipse_button_ = create_tool(L"Эллипс", kEllipseButton);
-    line_button_ = create_tool(L"Линия", kLineButton);
-    arrow_button_ = create_tool(L"Стрелка", kArrowButton);
-    marker_button_ = create_tool(L"Маркер", kMarkerButton);
-    text_button_ = create_tool(L"Текст", kTextButton);
-    blur_button_ = create_tool(L"Размыть", kBlurButton);
-    crop_button_ = create_tool(L"Обрезать", kCropButton);
-    select_button_ = create_tool(L"Выбор", kSelectButton);
+    rectangle_button_ = create_tool(i18n::Text(i18n::Id::rectangle), kRectangleButton);
+    ellipse_button_ = create_tool(i18n::Text(i18n::Id::ellipse), kEllipseButton);
+    line_button_ = create_tool(i18n::Text(i18n::Id::line), kLineButton);
+    arrow_button_ = create_tool(i18n::Text(i18n::Id::arrow), kArrowButton);
+    marker_button_ = create_tool(i18n::Text(i18n::Id::marker), kMarkerButton);
+    text_button_ = create_tool(i18n::Text(i18n::Id::text), kTextButton);
+    blur_button_ = create_tool(i18n::Text(i18n::Id::blur), kBlurButton);
+    crop_button_ = create_tool(i18n::Text(i18n::Id::crop), kCropButton);
+    select_button_ = create_tool(i18n::Text(i18n::Id::select), kSelectButton);
     const auto create_owner_button = [this](const wchar_t* name, const int command) {
         return ::CreateWindowExW(
             0, L"BUTTON", name, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
             0, 0, 0, 0, panel_,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(command)), instance_, nullptr);
     };
-    info_button_ = create_owner_button(L"Информация", kInfoButton);
-    settings_button_ = create_owner_button(L"Настройки", kSettingsButton);
-    fit_button_ = create_owner_button(L"Вписать", kFitButton);
+    info_button_ = create_owner_button(i18n::Text(i18n::Id::info), kInfoButton);
+    settings_button_ = create_owner_button(i18n::Text(i18n::Id::settings), kSettingsButton);
+    fit_button_ = create_owner_button(i18n::Text(i18n::Id::fit), kFitButton);
     actual_size_button_ = create_owner_button(L"100%", kActualSizeButton);
-    zoom_label_ = ::CreateWindowExW(0, L"STATIC", L"Масштаб: 100%",
+    zoom_label_ = ::CreateWindowExW(0, L"STATIC", i18n::Text(i18n::Id::zoom_initial),
         WS_CHILD | WS_VISIBLE | SS_CENTER, 0, 0, 0, 0, panel_, nullptr, instance_, nullptr);
-    red_button_ = create_owner_button(L"Красный", kRedButton);
-    green_button_ = create_owner_button(L"Зелёный", kGreenButton);
-    blue_button_ = create_owner_button(L"Синий", kBlueButton);
-    black_button_ = create_owner_button(L"Чёрный", kBlackButton);
-    bold_button_ = create_owner_button(L"Полужирный", kBoldButton);
-    italic_button_ = create_owner_button(L"Курсив", kItalicButton);
-    underline_button_ = create_owner_button(L"Подчёркнутый", kUnderlineButton);
+    red_button_ = create_owner_button(i18n::Text(i18n::Id::red), kRedButton);
+    green_button_ = create_owner_button(i18n::Text(i18n::Id::green), kGreenButton);
+    blue_button_ = create_owner_button(i18n::Text(i18n::Id::blue), kBlueButton);
+    black_button_ = create_owner_button(i18n::Text(i18n::Id::black), kBlackButton);
+    bold_button_ = create_owner_button(i18n::Text(i18n::Id::bold), kBoldButton);
+    italic_button_ = create_owner_button(i18n::Text(i18n::Id::italic), kItalicButton);
+    underline_button_ = create_owner_button(i18n::Text(i18n::Id::underline), kUnderlineButton);
     font_size_combo_ = ::CreateWindowExW(
         0, WC_COMBOBOXW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP |
             CBS_DROPDOWNLIST | CBS_HASSTRINGS | CBS_OWNERDRAWFIXED,
@@ -451,19 +452,19 @@ void EditorWindow::CreateControls() {
     ::SetWindowSubclass(font_size_combo_, &EditorWindow::ToolButtonProcedure, 1,
         reinterpret_cast<DWORD_PTR>(this));
     apply_crop_button_ = ::CreateWindowExW(
-        0, L"BUTTON", L"Применить", WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
+        0, L"BUTTON", i18n::Text(i18n::Id::apply), WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
         0, 0, 0, 0, window_,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kApplyCropButton)), instance_, nullptr);
     cancel_crop_button_ = ::CreateWindowExW(
-        0, L"BUTTON", L"Отмена", WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
+        0, L"BUTTON", i18n::Text(i18n::Id::cancel), WS_CHILD | WS_TABSTOP | BS_OWNERDRAW,
         0, 0, 0, 0, window_,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCancelCropButton)), instance_, nullptr);
     copy_button_ = ::CreateWindowExW(
-        0, L"BUTTON", L"Копировать в буфер обмена и закрыть", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
+        0, L"BUTTON", i18n::Text(i18n::Id::copy_accessible), WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
         0, 0, 0, 0, footer_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCopyButton)),
         instance_, nullptr);
     save_button_ = ::CreateWindowExW(
-        0, L"BUTTON", L"Сохранить", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
+        0, L"BUTTON", i18n::Text(i18n::Id::save), WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
         0, 0, 0, 0, footer_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSaveButton)),
         instance_, nullptr);
     const HWND action_buttons[]{
@@ -480,12 +481,12 @@ void EditorWindow::CreateControls() {
     }
     ::SendMessageW(font_size_combo_, WM_SETFONT,
         reinterpret_cast<WPARAM>(::GetStockObject(DEFAULT_GUI_FONT)), TRUE);
-    const HWND tooltip = ::CreateWindowExW(
+    tooltip_ = ::CreateWindowExW(
         WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr, WS_POPUP | TTS_ALWAYSTIP,
         CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
         window_, nullptr, instance_, nullptr);
-    if (tooltip != nullptr) {
-        const auto add_tooltip = [tooltip, this](const HWND control, wchar_t* text) {
+    if (tooltip_ != nullptr) {
+        const auto add_tooltip = [this](const HWND control, wchar_t* text) {
             TOOLINFOW info{
                 .cbSize = sizeof(TOOLINFOW),
                 .uFlags = TTF_IDISHWND | TTF_SUBCLASS,
@@ -493,16 +494,16 @@ void EditorWindow::CreateControls() {
                 .uId = reinterpret_cast<UINT_PTR>(control),
                 .lpszText = text,
             };
-            ::SendMessageW(tooltip, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&info));
+            ::SendMessageW(tooltip_, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&info));
         };
-        add_tooltip(copy_button_, const_cast<wchar_t*>(L"Копировать снимок в буфер обмена и закрыть редактор"));
-        add_tooltip(info_button_, const_cast<wchar_t*>(L"Информация"));
-        add_tooltip(settings_button_, const_cast<wchar_t*>(L"Настройки"));
-        add_tooltip(bold_button_, const_cast<wchar_t*>(L"Полужирный"));
-        add_tooltip(italic_button_, const_cast<wchar_t*>(L"Курсив"));
-        add_tooltip(underline_button_, const_cast<wchar_t*>(L"Подчёркнутый"));
-        add_tooltip(actual_size_button_, const_cast<wchar_t*>(L"Исходный размер: один пиксель изображения на пиксель экрана"));
-        add_tooltip(fit_button_, const_cast<wchar_t*>(L"Вписать снимок в окно (Ctrl+0)"));
+        add_tooltip(copy_button_, const_cast<wchar_t*>(i18n::Text(i18n::Id::copy_tip)));
+        add_tooltip(info_button_, const_cast<wchar_t*>(i18n::Text(i18n::Id::info)));
+        add_tooltip(settings_button_, const_cast<wchar_t*>(i18n::Text(i18n::Id::settings)));
+        add_tooltip(bold_button_, const_cast<wchar_t*>(i18n::Text(i18n::Id::bold)));
+        add_tooltip(italic_button_, const_cast<wchar_t*>(i18n::Text(i18n::Id::italic)));
+        add_tooltip(underline_button_, const_cast<wchar_t*>(i18n::Text(i18n::Id::underline)));
+        add_tooltip(actual_size_button_, const_cast<wchar_t*>(i18n::Text(i18n::Id::actual_tip)));
+        add_tooltip(fit_button_, const_cast<wchar_t*>(i18n::Text(i18n::Id::fit_tip)));
     }
     ::EnableWindow(save_button_, TRUE);
     ::DragAcceptFiles(window_, TRUE);
@@ -517,6 +518,50 @@ void EditorWindow::CreateControls() {
     }
     UpdateUiFont();
     UpdatePropertyControls();
+}
+
+void EditorWindow::RefreshLanguage() {
+    ::SetWindowTextW(rectangle_button_, i18n::Text(i18n::Id::rectangle));
+    ::SetWindowTextW(ellipse_button_, i18n::Text(i18n::Id::ellipse));
+    ::SetWindowTextW(line_button_, i18n::Text(i18n::Id::line));
+    ::SetWindowTextW(arrow_button_, i18n::Text(i18n::Id::arrow));
+    ::SetWindowTextW(marker_button_, i18n::Text(i18n::Id::marker));
+    ::SetWindowTextW(text_button_, i18n::Text(i18n::Id::text));
+    ::SetWindowTextW(blur_button_, i18n::Text(i18n::Id::blur));
+    ::SetWindowTextW(crop_button_, i18n::Text(i18n::Id::crop));
+    ::SetWindowTextW(select_button_, i18n::Text(i18n::Id::select));
+    ::SetWindowTextW(info_button_, i18n::Text(i18n::Id::info));
+    ::SetWindowTextW(settings_button_, i18n::Text(i18n::Id::settings));
+    ::SetWindowTextW(fit_button_, i18n::Text(i18n::Id::fit));
+    ::SetWindowTextW(red_button_, i18n::Text(i18n::Id::red));
+    ::SetWindowTextW(green_button_, i18n::Text(i18n::Id::green));
+    ::SetWindowTextW(blue_button_, i18n::Text(i18n::Id::blue));
+    ::SetWindowTextW(black_button_, i18n::Text(i18n::Id::black));
+    ::SetWindowTextW(bold_button_, i18n::Text(i18n::Id::bold));
+    ::SetWindowTextW(italic_button_, i18n::Text(i18n::Id::italic));
+    ::SetWindowTextW(underline_button_, i18n::Text(i18n::Id::underline));
+    ::SetWindowTextW(apply_crop_button_, i18n::Text(i18n::Id::apply));
+    ::SetWindowTextW(cancel_crop_button_, i18n::Text(i18n::Id::cancel));
+    ::SetWindowTextW(copy_button_, i18n::Text(i18n::Id::copy_accessible));
+    ::SetWindowTextW(save_button_, i18n::Text(i18n::Id::save));
+    if (tooltip_ != nullptr) {
+        ::SendMessageW(tooltip_, TTM_POP, 0, 0);
+        const auto update_tip = [this](HWND control, i18n::Id id) {
+            TOOLINFOW info{.cbSize = sizeof(TOOLINFOW), .uFlags = TTF_IDISHWND,
+                .hwnd = window_, .uId = reinterpret_cast<UINT_PTR>(control),
+                .lpszText = const_cast<wchar_t*>(i18n::Text(id))};
+            ::SendMessageW(tooltip_, TTM_UPDATETIPTEXTW, 0, reinterpret_cast<LPARAM>(&info));
+        };
+        update_tip(copy_button_, i18n::Id::copy_tip);
+        update_tip(info_button_, i18n::Id::info);
+        update_tip(settings_button_, i18n::Id::settings);
+        update_tip(bold_button_, i18n::Id::bold);
+        update_tip(italic_button_, i18n::Id::italic);
+        update_tip(underline_button_, i18n::Id::underline);
+        update_tip(actual_size_button_, i18n::Id::actual_tip);
+        update_tip(fit_button_, i18n::Id::fit_tip);
+    }
+    ::RedrawWindow(window_, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN);
 }
 
 void EditorWindow::UpdateUiFont() {
@@ -1216,7 +1261,7 @@ void EditorWindow::Paint() {
             ((static_cast<float>(canvas.bottom - canvas.top) -
                 (rendered.height * scale_)) / 2.0F);
     }
-    const auto zoom_text = L"Масштаб: " + std::to_wstring(static_cast<int>(std::lround(scale_ * 100))) + L"%";
+    const auto zoom_text = i18n::Text(i18n::Id::zoom_prefix) + std::to_wstring(static_cast<int>(std::lround(scale_ * 100))) + L"%";
     wchar_t previous_zoom[64]{};
     ::GetWindowTextW(zoom_label_, previous_zoom, 64);
     if (zoom_text != previous_zoom) ::SetWindowTextW(zoom_label_, zoom_text.c_str());
@@ -1466,7 +1511,7 @@ void EditorWindow::ApplyCrop() {
         return;
     }
     if (!session_.model.ApplyCrop()) {
-        ::MessageBoxW(window_, L"Не удалось применить обрезку.",
+        ::MessageBoxW(window_, i18n::Text(i18n::Id::crop_error),
             L"Screenshooter", MB_OK | MB_ICONERROR);
         return;
     }
@@ -1526,7 +1571,7 @@ void EditorWindow::CopyAndClose() {
     } else {
         ::MessageBoxW(
             window_,
-            L"Не удалось скопировать изображение.",
+            i18n::Text(i18n::Id::copy_error),
             L"Screenshooter",
             MB_OK | MB_ICONERROR
         );
@@ -1541,13 +1586,13 @@ void EditorWindow::SaveAs() {
             nullptr,
             CLSCTX_INPROC_SERVER,
             IID_PPV_ARGS(&dialog)))) {
-        ::MessageBoxW(window_, L"Не удалось открыть диалог сохранения.",
+        ::MessageBoxW(window_, i18n::Text(i18n::Id::save_dialog_error),
             L"Screenshooter", MB_OK | MB_ICONERROR);
         return;
     }
     const COMDLG_FILTERSPEC filters[]{
-        {L"PNG изображение", L"*.png"},
-        {L"JPEG изображение", L"*.jpg;*.jpeg"},
+        {i18n::Text(i18n::Id::png), L"*.png"},
+        {i18n::Text(i18n::Id::jpeg), L"*.jpg;*.jpeg"},
     };
     dialog->SetFileTypes(ARRAYSIZE(filters), filters);
     dialog->SetFileTypeIndex(1);
@@ -1571,7 +1616,7 @@ void EditorWindow::SaveAs() {
     UINT file_type = 1;
     if (FAILED(shown) || FAILED(dialog->GetResult(&item)) ||
         FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)) || path == nullptr) {
-        ::MessageBoxW(window_, L"Не удалось выбрать путь сохранения.",
+        ::MessageBoxW(window_, i18n::Text(i18n::Id::save_path_error),
             L"Screenshooter", MB_OK | MB_ICONERROR);
         return;
     }
@@ -1586,7 +1631,7 @@ void EditorWindow::SaveAs() {
         session_.model.MarkClean();
         static_cast<void>(platform::RevealFileInExplorer(saved_path));
     } else {
-        ::MessageBoxW(window_, L"Не удалось сохранить изображение.",
+        ::MessageBoxW(window_, i18n::Text(i18n::Id::save_error),
             L"Screenshooter", MB_OK | MB_ICONERROR);
     }
 }
@@ -1595,7 +1640,7 @@ bool EditorWindow::SaveToDefaultFolder() {
     const auto folder = DefaultSaveFolder();
     if (folder.empty()) {
         ::MessageBoxW(window_,
-            L"Не удалось определить папку сохранения по умолчанию.",
+            i18n::Text(i18n::Id::default_folder_error),
             L"Screenshooter", MB_OK | MB_ICONERROR);
         return false;
     }
@@ -1608,7 +1653,7 @@ bool EditorWindow::SaveToDefaultFolder() {
             path, DocumentRenderer::Render(session_.model),
             exporting::ImageFormat::png)) {
         ::MessageBoxW(window_,
-            L"Не удалось сохранить изображение в папку по умолчанию.",
+            i18n::Text(i18n::Id::default_save_error),
             L"Screenshooter", MB_OK | MB_ICONERROR);
         return false;
     }
@@ -1620,7 +1665,7 @@ bool EditorWindow::SaveToDefaultFolder() {
 void EditorWindow::InsertImageFile(const wchar_t* path) {
     auto image = exporting::ImageFileService::Load(path);
     if (!image.has_value()) {
-        ::MessageBoxW(window_, L"Не удалось открыть изображение.",
+        ::MessageBoxW(window_, i18n::Text(i18n::Id::open_error),
             L"Screenshooter", MB_OK | MB_ICONERROR);
         return;
     }
@@ -2236,6 +2281,9 @@ LRESULT EditorWindow::HandleMessage(
     const LPARAM l_param
 ) {
     switch (message) {
+    case i18n::kLanguageChanged:
+        RefreshLanguage();
+        return 0;
     case WM_MEASUREITEM: {
         auto* item = reinterpret_cast<MEASUREITEMSTRUCT*>(l_param);
         if (item != nullptr && item->CtlID == kFontSizeCombo) {
@@ -2548,7 +2596,7 @@ LRESULT EditorWindow::HandleMessage(
         if (!closing_after_export_ && session_.model.dirty()) {
             const int choice = ::MessageBoxW(
                 window_,
-                L"Сохранить изменения перед закрытием?",
+                i18n::Text(i18n::Id::unsaved),
                 L"Screenshooter",
                 MB_YESNOCANCEL | MB_ICONQUESTION | MB_DEFBUTTON1
             );

@@ -1,3 +1,4 @@
+#include "localization/strings.h"
 #include "tray/tray_host.h"
 
 #include <strsafe.h>
@@ -71,16 +72,16 @@ TrayCommand TrayHost::ShowContextMenu() const {
         return TrayCommand::none;
     }
 
-    ::AppendMenuW(menu, MF_STRING, kCaptureCommand, L"Снимок области");
-    ::AppendMenuW(menu, MF_STRING, kWindowCommand, L"Окно под курсором");
-    ::AppendMenuW(menu, MF_STRING, kMonitorCommand, L"Монитор под курсором");
-    ::AppendMenuW(menu, MF_STRING, kAllCommand, L"Все мониторы");
-    ::AppendMenuW(menu, MF_STRING, kOpenCommand, L"Открыть изображение…");
+    ::AppendMenuW(menu, MF_STRING, kCaptureCommand, i18n::Text(i18n::Id::capture_area));
+    ::AppendMenuW(menu, MF_STRING, kWindowCommand, i18n::Text(i18n::Id::capture_window));
+    ::AppendMenuW(menu, MF_STRING, kMonitorCommand, i18n::Text(i18n::Id::capture_monitor));
+    ::AppendMenuW(menu, MF_STRING, kAllCommand, i18n::Text(i18n::Id::capture_all));
+    ::AppendMenuW(menu, MF_STRING, kOpenCommand, i18n::Text(i18n::Id::open_image));
     ::AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    ::AppendMenuW(menu, MF_STRING, kOpenFolderCommand, L"Открыть папку сохранения");
-    ::AppendMenuW(menu, MF_STRING, kSettingsCommand, L"Настройки…");
+    ::AppendMenuW(menu, MF_STRING, kOpenFolderCommand, i18n::Text(i18n::Id::open_folder));
+    ::AppendMenuW(menu, MF_STRING, kSettingsCommand, i18n::Text(i18n::Id::settings_menu));
     ::AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    ::AppendMenuW(menu, MF_STRING, kExitCommand, L"Выход");
+    ::AppendMenuW(menu, MF_STRING, kExitCommand, i18n::Text(i18n::Id::exit));
     ::SetForegroundWindow(owner_);
     const UINT command = ::TrackPopupMenuEx(
         menu,

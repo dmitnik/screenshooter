@@ -80,3 +80,44 @@ TEST_CASE("Enabled hotkeys must all be present and unique") {
     REQUIRE(screenshooter::settings::ValidateSettings(settings) ==
         SettingsValidationError::none);
 }
+
+TEST_CASE("Language defaults to English and round trips independently of other settings") {
+    using screenshooter::i18n::Language;
+    const std::wstring path = TestPath();
+    RegistryCleanup cleanup{path};
+    screenshooter::settings::SettingsStore store(path);
+    REQUIRE(store.Load().language == Language::english);
+    auto settings = store.Load();
+    settings.language = Language::russian;
+    settings.save_folder = L"D:\\Screenshots";
+    REQUIRE(store.Save(settings));
+    REQUIRE(store.Load().language == Language::russian);
+    settings.language = Language::english;
+    REQUIRE(store.Save(settings));
+    REQUIRE(store.Load().language == Language::english);
+    REQUIRE(store.Load().save_folder == settings.save_folder);
+
+    HKEY key = nullptr;
+    REQUIRE(::RegOpenKeyExW(HKEY_CURRENT_USER, path.c_str(), 0, KEY_SET_VALUE, &key) == ERROR_SUCCESS);
+    const DWORD unknown = 99;
+    REQUIRE(::RegSetValueExW(key, L"Language", 0, REG_DWORD,
+        reinterpret_cast<const BYTE*>(&unknown), sizeof(unknown)) == ERROR_SUCCESS);
+    ::RegCloseKey(key);
+    REQUIRE(store.Load().language == Language::english);
+    REQUIRE(store.Load().save_folder == settings.save_folder);
+    REQUIRE(::RegOpenKeyExW(HKEY_CURRENT_USER, path.c_str(), 0, KEY_SET_VALUE, &key) == ERROR_SUCCESS);
+    REQUIRE(::RegDeleteValueW(key, L"Language") == ERROR_SUCCESS);
+    ::RegCloseKey(key);
+    REQUIRE(store.Load().language == Language::english);
+    REQUIRE(store.Load().save_folder == settings.save_folder);
+}
+
+TEST_CASE("Every UI string is translated in both supported languages") {
+    using namespace screenshooter::i18n;
+    for (std::size_t index = 0; index < static_cast<std::size_t>(Id::count); ++index) {
+        const auto id = static_cast<Id>(index);
+        REQUIRE(std::wstring(Text(id, Language::english)).size() > 0);
+        REQUIRE(std::wstring(Text(id, Language::russian)).size() > 0);
+        REQUIRE(std::wstring(Text(id, Language::english)) != Text(id, Language::russian));
+    }
+}
