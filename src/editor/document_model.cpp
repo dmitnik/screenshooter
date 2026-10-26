@@ -119,7 +119,7 @@ platform::PixelPoint ConstrainShapeEnd(
         kind == AnnotationKind::ellipse;
     const bool angled = kind == AnnotationKind::line ||
         kind == AnnotationKind::arrow;
-    if ((!square && !angled) || bounds.empty() || start == end) {
+    if ((!square && !angled) || start == end) {
         return end;
     }
 
@@ -157,7 +157,8 @@ platform::PixelPoint ConstrainShapeEnd(
         dx, start.x, bounds.left, bounds.right);
     const std::int32_t direction_y = direction(
         dy, start.y, bounds.top, bounds.bottom);
-    const std::int32_t maximum_side = std::max(0, std::min(
+    // An empty bound constrains only the shape, not its position on the canvas.
+    const std::int32_t maximum_side = bounds.empty() ? std::max(absolute_x, absolute_y) : std::max(0, std::min(
         available(start.x, direction_x, bounds.left, bounds.right),
         available(start.y, direction_y, bounds.top, bounds.bottom)
     ));
@@ -225,7 +226,7 @@ bool ResizeAnnotationEndpoint(
         const double desired_scale = std::max(
             static_cast<double>(std::abs(point.x - anchor.x)) / annotation.image->width,
             static_cast<double>(std::abs(point.y - anchor.y)) / annotation.image->height);
-        const double maximum_scale = std::min(
+        const double maximum_scale = bounds.empty() ? desired_scale : std::min(
             static_cast<double>(available(anchor.x, direction_x, bounds.left, bounds.right)) /
                 annotation.image->width,
             static_cast<double>(available(anchor.y, direction_y, bounds.top, bounds.bottom)) /

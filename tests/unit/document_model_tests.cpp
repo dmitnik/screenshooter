@@ -18,6 +18,75 @@ using screenshooter::editor::UpdateMarkerStroke;
 using screenshooter::platform::PixelPoint;
 using screenshooter::platform::PixelRect;
 
+TEST_CASE("Outside annotations are clipped without growing the screenshot") {
+    for (const auto kind : {AnnotationKind::line, AnnotationKind::arrow,
+            AnnotationKind::rectangle, AnnotationKind::ellipse,
+            AnnotationKind::marker, AnnotationKind::blur, AnnotationKind::text,
+            AnnotationKind::image}) {
+        DocumentModel model(CreateOpaqueBuffer(80, 60));
+        const auto source = model.Snapshot().source;
+        static_cast<void>(model.Add(Annotation{
+            .kind = kind,
+            .start = {-30, -20},
+            .end = {110, 90},
+            .points = {{-30, -20}, {40, 30}, {110, 90}},
+            .text = L"Outside text",
+            .image = std::make_shared<screenshooter::capture::PixelBuffer>(
+                CreateOpaqueBuffer(8, 8)),
+        }));
+        const auto rendered = DocumentRenderer::Render(model);
+        REQUIRE(rendered.width == 80);
+        REQUIRE(rendered.height == 60);
+        REQUIRE(model.Snapshot().source == source);
+        REQUIRE(model.state().crop == PixelRect{0, 0, 80, 60});
+    }
+}
+
+TEST_CASE("Outside line keeps its original slope at the image boundary") {
+    DocumentModel model(CreateOpaqueBuffer(80, 60));
+    static_cast<void>(model.Add(Annotation{
+        .kind = AnnotationKind::line,
+        .start = {-40, -20},
+        .end = {120, 60},
+        .color = 0xFFFF0000,
+        .thickness = 2,
+    }));
+    const auto rendered = DocumentRenderer::Render(model);
+    REQUIRE(std::to_integer<int>(rendered.row(20)[40 * 4 + 2]) == 255);
+    REQUIRE(std::to_integer<int>(rendered.row(40)[40 * 4 + 2]) == 0);
+}
+
+TEST_CASE("Unbounded Shift shapes and image resizing preserve geometry outside the image") {
+    REQUIRE(ConstrainShapeEnd(AnnotationKind::rectangle,
+        {-30, -20}, {100, 40}, {}) == PixelPoint{100, 110});
+    REQUIRE(ConstrainShapeEnd(AnnotationKind::line,
+        {-30, -20}, {100, 40}, {}) == PixelPoint{100, 110});
+    Annotation image{
+        .kind = AnnotationKind::image,
+        .start = {-20, -10},
+        .end = {20, 10},
+        .image = std::make_shared<screenshooter::capture::PixelBuffer>(
+            CreateOpaqueBuffer(40, 20)),
+    };
+    REQUIRE(ResizeAnnotationEndpoint(image, ResizeHandle::end, {100, 30}, {}, true));
+    REQUIRE(image.end == PixelPoint{100, 50});
+}
+
+TEST_CASE("Crop started outside only removes the intersecting image area and can be undone") {
+    DocumentModel model(CreateOpaqueBuffer(80, 60));
+    const auto before = model.Snapshot();
+    model.SetCrop({-50, -30, 130, 15});
+    REQUIRE(model.state().crop == PixelRect{0, 0, 80, 15});
+    REQUIRE(model.source().height == 60);
+    REQUIRE(model.ApplyCrop());
+    CommandHistory history;
+    history.Commit(before, model.Snapshot());
+    REQUIRE(model.source().width == 80);
+    REQUIRE(model.source().height == 15);
+    REQUIRE(history.Undo(model));
+    REQUIRE(model.source().height == 60);
+}
+
 TEST_CASE("Hit testing returns the topmost annotation") {
     DocumentModel model(CreateOpaqueBuffer(100, 100));
     const auto lower = model.Add(Annotation{

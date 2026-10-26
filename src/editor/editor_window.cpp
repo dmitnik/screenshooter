@@ -1227,6 +1227,8 @@ void EditorWindow::Paint() {
     bitmap_info.bmiHeader.biPlanes = 1;
     bitmap_info.bmiHeader.biBitCount = 32;
     bitmap_info.bmiHeader.biCompression = BI_RGB;
+    const int saved_canvas_dc = ::SaveDC(dc);
+    ::IntersectClipRect(dc, canvas.left, canvas.top, canvas.right, canvas.bottom);
     ::SetStretchBltMode(dc, HALFTONE);
     ::StretchDIBits(
         dc,
@@ -1243,6 +1245,13 @@ void EditorWindow::Paint() {
         DIB_RGB_COLORS,
         SRCCOPY
     );
+    ::IntersectClipRect(dc,
+        static_cast<int>(std::lround(offset_x_)),
+        static_cast<int>(std::lround(offset_y_)),
+        static_cast<int>(std::lround(offset_x_)) +
+            static_cast<int>(std::lround(rendered.width * scale_)),
+        static_cast<int>(std::lround(offset_y_)) +
+            static_cast<int>(std::lround(rendered.height * scale_)));
     const auto visible_bounds = VisibleDocumentBounds();
     if (session_.model.state().selected.has_value()) {
         const Annotation* selected = session_.model.Find(*session_.model.state().selected);
@@ -1330,6 +1339,9 @@ void EditorWindow::Paint() {
         ::SelectObject(dc, old_brush);
         ::SelectObject(dc, old_pen);
         ::DeleteObject(crop_pen);
+    }
+    if (saved_canvas_dc != 0) {
+        ::RestoreDC(dc, saved_canvas_dc);
     }
     finish_paint();
     // Moving children can repaint them immediately. Finish the canvas blit first,
@@ -1659,8 +1671,7 @@ bool EditorWindow::IsCanvasPoint(const POINT client_point) const noexcept {
         client_point.y < client.top || client_point.y >= bottom) {
         return false;
     }
-    const auto document = DocumentPoint(client_point);
-    return platform::Contains(VisibleDocumentBounds(), document);
+    return true;
 }
 
 void EditorWindow::BeginDocumentAction(const POINT client_point) {
@@ -1674,7 +1685,9 @@ void EditorWindow::BeginDocumentAction(const POINT client_point) {
     action_before_ = session_.model.Snapshot();
     if (tool_ != Tool::crop) {
         const bool had_selection = session_.model.state().selected.has_value();
-        if (had_selection) {
+        const bool inside_image = platform::Contains(
+            VisibleDocumentBounds(), last_document_point_);
+        if (had_selection && inside_image) {
             Annotation* selected = session_.model.Find(*session_.model.state().selected);
             const int handle_tolerance = std::max(
                 4,
@@ -1694,7 +1707,8 @@ void EditorWindow::BeginDocumentAction(const POINT client_point) {
                 return;
             }
         }
-        const auto hit = session_.model.HitTest(last_document_point_);
+        const auto hit = inside_image
+            ? session_.model.HitTest(last_document_point_) : std::nullopt;
         if (hit.has_value()) {
             session_.model.Select(hit);
             active_annotation_ = *hit;
@@ -1704,7 +1718,7 @@ void EditorWindow::BeginDocumentAction(const POINT client_point) {
             InvalidateCanvas();
             return;
         }
-        if (had_selection) {
+        if (had_selection && inside_image) {
             session_.model.Select(std::nullopt);
             UpdatePropertyControls();
             InvalidateCanvas();
@@ -1716,6 +1730,7 @@ void EditorWindow::BeginDocumentAction(const POINT client_point) {
             InvalidateCanvas();
             return;
         }
+        session_.model.Select(std::nullopt);
     }
     if (tool_ == Tool::text) {
         BeginTextEdit(client_point);
@@ -1785,26 +1800,19 @@ void EditorWindow::UpdateDocumentAction(
     if (!dragging_ && !creating_ && !resizing_ && !crop_drafting_) {
         return;
     }
-    auto current = DocumentPoint(client_point);
+    const auto current = DocumentPoint(client_point);
     last_client_point_ = client_point;
-    const auto& source = session_.model.source();
     if (crop_drafting_) {
-        current.x = std::clamp(current.x, 0, source.width);
-        current.y = std::clamp(current.y, 0, source.height);
-    } else {
-        const auto visible = VisibleDocumentBounds();
-        current.x = std::clamp(current.x, visible.left, visible.right - 1);
-        current.y = std::clamp(current.y, visible.top, visible.bottom - 1);
-    }
-    if (crop_drafting_) {
-        session_.model.SetCrop(platform::Normalize(action_anchor_, current));
+        const auto crop = platform::Intersect(
+            platform::Normalize(action_anchor_, current), VisibleDocumentBounds());
+        session_.model.SetCrop(crop.empty() ? VisibleDocumentBounds() : crop);
     } else if (resizing_) {
         if (Annotation* annotation = session_.model.Find(active_annotation_)) {
             static_cast<void>(ResizeAnnotationEndpoint(
                 *annotation,
                 resize_handle_,
                 current,
-                VisibleDocumentBounds(),
+                {},
                 constrain_geometry
             ));
         }
@@ -1828,7 +1836,7 @@ void EditorWindow::UpdateDocumentAction(
                 annotation->kind,
                 annotation->start,
                 annotation->end,
-                VisibleDocumentBounds()
+                {}
             );
         }
     }
@@ -1847,6 +1855,7 @@ void EditorWindow::EndDocumentAction(
     if (creating_) {
         if (Annotation* annotation = session_.model.Find(active_annotation_);
             annotation != nullptr && annotation->kind == AnnotationKind::arrow &&
+            platform::Contains(VisibleDocumentBounds(), annotation->end) &&
             std::abs(annotation->end.x - annotation->start.x) <= 8 &&
             std::abs(annotation->end.y - annotation->start.y) <= 8) {
             const platform::PixelPoint tip = annotation->end;
@@ -1863,7 +1872,9 @@ void EditorWindow::EndDocumentAction(
     resize_handle_ = ResizeHandle::none;
     const bool completed_crop = crop_drafting_;
     if (completed_crop) {
-        const auto crop = platform::Normalize(action_anchor_, last_document_point_);
+        const auto crop = platform::Intersect(
+            platform::Normalize(action_anchor_, last_document_point_),
+            VisibleDocumentBounds());
         crop_release_on_right_ = last_document_point_.x >= action_anchor_.x;
         crop_release_on_bottom_ = last_document_point_.y >= action_anchor_.y;
         crop_selection_ready_ = !crop.empty();
@@ -1942,6 +1953,22 @@ void EditorWindow::BeginTextEdit(
     }
     const int width = static_cast<int>(std::lround(document_width * scale_));
     const int height = static_cast<int>(std::lround(document_height * scale_));
+    RECT client{};
+    ::GetClientRect(window_, &client);
+    const auto text_clip = platform::Intersect(
+        {static_cast<int>(std::lround(offset_x_)),
+         static_cast<int>(std::lround(offset_y_)),
+         static_cast<int>(std::lround(offset_x_ + session_.model.source().width * scale_)),
+         static_cast<int>(std::lround(offset_y_ + session_.model.source().height * scale_))},
+        {0, 0, client.right - platform::DipToPixels(
+            kToolPanelWidthDip, ::GetDpiForWindow(window_)), client.bottom});
+    if (platform::Intersect(text_clip,
+            {edit_origin.x, edit_origin.y,
+             edit_origin.x + std::max(width, existing.has_value() ? 80 : 160),
+             edit_origin.y + std::max(height, existing.has_value() ? 40 : 60)}).empty()) {
+        editing_text_id_.reset();
+        return;
+    }
     text_edit_ = ::CreateWindowExW(
         WS_EX_CLIENTEDGE,
         L"EDIT",
@@ -1959,6 +1986,12 @@ void EditorWindow::BeginTextEdit(
     if (text_edit_ == nullptr) {
         editing_text_id_.reset();
         return;
+    }
+    HRGN text_region = ::CreateRectRgn(
+        text_clip.left - edit_origin.x, text_clip.top - edit_origin.y,
+        text_clip.right - edit_origin.x, text_clip.bottom - edit_origin.y);
+    if (text_region != nullptr && ::SetWindowRgn(text_edit_, text_region, TRUE) == 0) {
+        ::DeleteObject(text_region);
     }
     const int edit_font_size = std::max(
         8, static_cast<int>(std::lround(current_font_size_ * scale_)));
@@ -2362,7 +2395,8 @@ LRESULT EditorWindow::HandleMessage(
         return 0;
     case WM_LBUTTONDBLCLK: {
         const POINT point{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)};
-        if (tool_ != Tool::crop && IsCanvasPoint(point)) {
+        if (tool_ != Tool::crop && IsCanvasPoint(point) &&
+            platform::Contains(VisibleDocumentBounds(), DocumentPoint(point))) {
             const auto hit = session_.model.HitTest(DocumentPoint(point));
             const Annotation* annotation = hit.has_value()
                 ? session_.model.Find(*hit)
