@@ -44,3 +44,11 @@ CMakeUserPresets.json
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Local task reports and attachments
+/diffs/
+/.codex-remote-attachments/
+
+# Local credentials
+.env
+.env.*

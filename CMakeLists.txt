@@ -188,6 +188,7 @@ endif()
 if(BUILD_TESTING AND SCREENSHOOTER_BUILD_TESTS)
     add_executable(localization_ui_smoke EXCLUDE_FROM_ALL
         tests/integration/localization_ui_smoke.cpp
+        src/app/info_dialog.cpp
         src/editor/editor_window.cpp
         src/editor/document_session.cpp
         src/settings/settings_dialog.cpp

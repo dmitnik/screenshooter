@@ -1,5 +1,6 @@
 // Explicit desktop smoke test; intentionally not registered with unattended CTest.
 #include "editor/editor_window.h"
+#include "app/info_dialog.h"
 #include "settings/settings_dialog.h"
 #include "localization/strings.h"
 #include "platform/com_apartment.h"
@@ -134,6 +135,31 @@ void CheckScaledLabels() {
         ::SelectObject(dc, old); ::DeleteObject(font); ::ReleaseDC(nullptr, dc);
     }
 }
+void CALLBACK ExerciseInfo(HWND, UINT, UINT_PTR timer, DWORD) {
+    ::KillTimer(nullptr, timer);
+    HWND dialog = ::FindWindowW(L"Screenshooter.Information", nullptr);
+    Check(dialog != nullptr, "About dialog opened");
+    if (dialog == nullptr) return;
+    HWND link = ::GetDlgItem(dialog, 4003);
+    LITEM item{};
+    item.mask = LIF_ITEMINDEX | LIF_URL;
+    item.iLink = 0;
+    Check(::SendMessageW(link, LM_GETITEM, 0, reinterpret_cast<LPARAM>(&item)) != FALSE,
+        "repository is a native link");
+    Check(std::wstring(item.szUrl) == L"https://github.com/dmitnik/screenshooter",
+        "repository URL is correct");
+    Check(::GetFocus() == link, "repository link receives initial keyboard focus");
+    Check(::GetNextDlgTabItem(dialog, link, FALSE) == ::GetDlgItem(dialog, 4001),
+        "Tab moves from repository link to Close");
+    Measure(link, 0, L"github.com/dmitnik/screenshooter");
+    for (auto language : {i18n::Language::english, i18n::Language::russian}) {
+        i18n::SetLanguage(language);
+        Check(Caption(dialog) == i18n::Text(i18n::Id::info_title), "About title translated");
+        Measure(::GetDlgItem(dialog, 4001), 16);
+        Snapshot(dialog, language == i18n::Language::english ? L"about-en" : L"about-ru");
+    }
+    ::SendMessageW(dialog, WM_COMMAND, 4001, 0);
+}
 }
 int main() {
     ::SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
@@ -164,6 +190,8 @@ int main() {
     for (auto language : {i18n::Language::english, i18n::Language::russian}) {
         i18n::SetLanguage(language); CheckEditor();
     }
+    ::SetTimer(nullptr, 0, 100, ExerciseInfo);
+    app::ShowInfoDialog(::GetModuleHandleW(nullptr), editor_window);
     ::DestroyWindow(editor_window);
     std::cout << "Localization desktop smoke: " << (failures == 0 ? "PASS" : "FAIL") << " (" << failures << " failures)\n";
     return failures == 0 ? 0 : 1;

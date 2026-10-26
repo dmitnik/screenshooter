@@ -3,8 +3,10 @@
 A lightweight, portable Windows screenshot tool with annotation, cropping, blur,
 and instant English/Russian language switching.
 
+[Source code](https://github.com/dmitnik/screenshooter) · [MIT License](LICENSE)
+
 Screenshooter — нативное локальное приложение для снимков экрана на Windows 10
-1903+ и Windows 11. Оно работает одним процессом, не использует сеть или облако
+1903+ и Windows 11. Оно работает одним процессом, обрабатывает снимки локально без облака
 и распространяется как portable `screenshooter.exe`.
 
 ## Возможности текущей portable-версии
@@ -164,6 +166,8 @@ Windows 11 x64, экран 1920 × 1080, Release, 2026-08-28:
 `THIRD_PARTY_NOTICES.md`.
 
 ## License
+
+The repository link in the About window opens in your default browser.
 
 Screenshooter is licensed under the [MIT License](LICENSE).
 Third-party components retain their respective licenses; see

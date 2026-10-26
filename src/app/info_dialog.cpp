@@ -1,12 +1,18 @@
 #include "localization/strings.h"
 #include "app/info_dialog.h"
 
+#include <commctrl.h>
+#include <shellapi.h>
+
 namespace screenshooter::app {
 namespace {
 
 constexpr wchar_t kWindowClass[] = L"Screenshooter.Information";
 constexpr int kCloseControl = 4001;
-
+constexpr int kRepositoryControl = 4003;
+constexpr wchar_t kRepositoryUrl[] = L"https://github.com/dmitnik/screenshooter";
+constexpr wchar_t kRepositoryLink[] =
+    L"<a href=\"https://github.com/dmitnik/screenshooter\">github.com/dmitnik/screenshooter</a>";
 
 LRESULT CALLBACK InfoProcedure(
     const HWND window,
@@ -30,14 +36,32 @@ LRESULT CALLBACK InfoProcedure(
                 ES_AUTOVSCROLL | ES_READONLY,
             scaled(16), scaled(16), scaled(528), scaled(384),
             window, reinterpret_cast<HMENU>(4002), instance, nullptr);
+        HWND repository = ::CreateWindowExW(0, WC_LINK, kRepositoryLink,
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+            scaled(16), scaled(414), scaled(528), scaled(24), window,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(kRepositoryControl)), instance, nullptr);
         HWND close = ::CreateWindowExW(0, L"BUTTON", i18n::Text(i18n::Id::close),
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
-            scaled(444), scaled(414), scaled(100), scaled(30), window,
+            scaled(444), scaled(450), scaled(100), scaled(30), window,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(kCloseControl)), instance, nullptr);
         const WPARAM font = reinterpret_cast<WPARAM>(::GetStockObject(DEFAULT_GUI_FONT));
         ::SendMessageW(text, WM_SETFONT, font, TRUE);
         ::SendMessageW(close, WM_SETFONT, font, TRUE);
+        ::SendMessageW(repository, WM_SETFONT, font, TRUE);
         return 0;
+    }
+    if (message == WM_NOTIFY && l_param != 0) {
+        const auto* notification = reinterpret_cast<const NMHDR*>(l_param);
+        if (notification->idFrom == kRepositoryControl &&
+            (notification->code == NM_CLICK || notification->code == NM_RETURN)) {
+            const auto result = reinterpret_cast<INT_PTR>(::ShellExecuteW(
+                window, L"open", kRepositoryUrl, nullptr, nullptr, SW_SHOWNORMAL));
+            if (result <= 32) {
+                ::MessageBoxW(window, i18n::Text(i18n::Id::repository_open_error),
+                    L"Screenshooter", MB_OK | MB_ICONERROR);
+            }
+            return 0;
+        }
     }
     if (message == WM_COMMAND &&
         (LOWORD(w_param) == kCloseControl || LOWORD(w_param) == IDCANCEL)) {
@@ -54,6 +78,8 @@ LRESULT CALLBACK InfoProcedure(
 }  // namespace
 
 void ShowInfoDialog(const HINSTANCE instance, const HWND owner) {
+    INITCOMMONCONTROLSEX controls{sizeof(controls), ICC_LINK_CLASS};
+    if (!::InitCommonControlsEx(&controls)) return;
     WNDCLASSEXW window_class{
         .cbSize = sizeof(WNDCLASSEXW),
         .lpfnWndProc = InfoProcedure,
@@ -67,7 +93,7 @@ void ShowInfoDialog(const HINSTANCE instance, const HWND owner) {
         return;
     }
     const UINT dpi = owner != nullptr ? ::GetDpiForWindow(owner) : 96;
-    RECT bounds{0, 0, ::MulDiv(560, dpi, 96), ::MulDiv(460, dpi, 96)};
+    RECT bounds{0, 0, ::MulDiv(560, dpi, 96), ::MulDiv(496, dpi, 96)};
     ::AdjustWindowRectExForDpi(
         &bounds, WS_CAPTION | WS_SYSMENU, FALSE, WS_EX_DLGMODALFRAME, dpi);
     const int width = bounds.right - bounds.left;
@@ -98,6 +124,7 @@ void ShowInfoDialog(const HINSTANCE instance, const HWND owner) {
     }
     ::ShowWindow(window, SW_SHOW);
     ::SetForegroundWindow(window);
+    ::SetFocus(::GetDlgItem(window, kRepositoryControl));
     MSG message{};
     while (::IsWindow(window)) {
         const BOOL received = ::GetMessageW(&message, nullptr, 0, 0);

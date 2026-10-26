@@ -85,6 +85,7 @@ enum class Id {
     copy,
     hotkeys_busy,
     instructions,
+    repository_open_error,
     count
 };
 inline constexpr UINT kLanguageChanged = WM_APP + 80;
