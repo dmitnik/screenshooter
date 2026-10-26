@@ -2,6 +2,7 @@
 
 #include "editor/document_session.h"
 #include "editor/command_history.h"
+#include "editor/document_renderer.h"
 #include "performance/metrics.h"
 
 #include <windows.h>
@@ -136,6 +137,7 @@ private:
     SIZE paint_buffer_size_{};
     DocumentSession session_;
     CommandHistory history_;
+    DocumentRenderCache render_cache_;
     Tool tool_{Tool::select};
     float scale_{1.0F};
     float offset_x_{};

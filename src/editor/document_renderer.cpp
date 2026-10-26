@@ -249,7 +249,9 @@ void ApplyPixelation(capture::PixelBuffer& image, platform::PixelRect area) {
     }
 }
 
-void DrawAnnotation(capture::PixelBuffer& image, const Annotation& annotation) {
+void DrawAnnotation(
+    capture::PixelBuffer& image, const Annotation& annotation, bool& drew_text
+) {
     if (annotation.kind == AnnotationKind::blur) {
         ApplyPixelation(image, platform::Normalize(annotation.start, annotation.end));
         return;
@@ -316,10 +318,18 @@ void DrawAnnotation(capture::PixelBuffer& image, const Annotation& annotation) {
         return;
     }
     if (annotation.kind == AnnotationKind::text) {
+        const auto bounds = platform::Normalize(annotation.start, annotation.end);
+        const auto visible = platform::Intersect(bounds, {0, 0, image.width, image.height});
+        // Preserve the existing opaque result even for text outside the canvas.
+        drew_text = true;
+        if (visible.empty()) {
+            return;
+        }
+        const auto row_bytes = static_cast<std::size_t>(visible.width()) * 4;
         BITMAPINFO info{};
         info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-        info.bmiHeader.biWidth = image.width;
-        info.bmiHeader.biHeight = -image.height;
+        info.bmiHeader.biWidth = visible.width();
+        info.bmiHeader.biHeight = -visible.height();
         info.bmiHeader.biPlanes = 1;
         info.bmiHeader.biBitCount = 32;
         info.bmiHeader.biCompression = BI_RGB;
@@ -328,7 +338,12 @@ void DrawAnnotation(capture::PixelBuffer& image, const Annotation& annotation) {
         HBITMAP bitmap = ::CreateDIBSection(dc, &info, DIB_RGB_COLORS, &bits, nullptr, 0);
         if (dc != nullptr && bitmap != nullptr && bits != nullptr) {
             HGDIOBJ old_bitmap = ::SelectObject(dc, bitmap);
-            std::memcpy(bits, image.pixels.data(), image.pixels.size());
+            auto* text_pixels = static_cast<std::byte*>(bits);
+            for (std::int32_t y = 0; y < visible.height(); ++y) {
+                std::memcpy(text_pixels + static_cast<std::size_t>(y) * row_bytes,
+                    image.row(visible.top + y) + static_cast<std::size_t>(visible.left) * 4,
+                    row_bytes);
+            }
             const int font_size = std::max(8, annotation.font_size);
             HFONT font = ::CreateFontW(-font_size, 0, 0, 0,
                 annotation.font_bold ? FW_BOLD : FW_NORMAL,
@@ -341,15 +356,16 @@ void DrawAnnotation(capture::PixelBuffer& image, const Annotation& annotation) {
                 (annotation.color >> 16U) & 0xFFU,
                 (annotation.color >> 8U) & 0xFFU,
                 annotation.color & 0xFFU));
-            const auto bounds = platform::Normalize(annotation.start, annotation.end);
-            RECT text_bounds{bounds.left, bounds.top, bounds.right, bounds.bottom};
+            // Keep the original layout width and origin when text crosses an edge.
+            RECT text_bounds{bounds.left - visible.left, bounds.top - visible.top,
+                bounds.right - visible.left, bounds.bottom - visible.top};
             ::DrawTextW(dc, annotation.text.c_str(), -1, &text_bounds,
                 DT_LEFT | DT_TOP | DT_WORDBREAK);
-            std::memcpy(image.pixels.data(), bits, image.pixels.size());
-            for (std::int32_t y = 0; y < image.height; ++y) {
-                for (std::int32_t x = 0; x < image.width; ++x) {
-                    image.row(y)[(x * 4) + 3] = std::byte{0xFF};
-                }
+            ::GdiFlush();
+            for (std::int32_t y = 0; y < visible.height(); ++y) {
+                std::memcpy(
+                    image.row(visible.top + y) + static_cast<std::size_t>(visible.left) * 4,
+                    text_pixels + static_cast<std::size_t>(y) * row_bytes, row_bytes);
             }
             ::SelectObject(dc, old_font);
             ::DeleteObject(font);
@@ -401,20 +417,22 @@ capture::PixelBuffer DocumentRenderer::Render(
     const DocumentModel& model,
     const bool apply_crop
 ) {
-    capture::PixelBuffer output = capture::CreateOpaqueBuffer(
-        model.source().width,
-        model.source().height
-    );
+    capture::PixelBuffer output = model.source();
     if (output.empty()) {
         return {};
     }
-    std::memcpy(
-        output.pixels.data(),
-        model.source().pixels.data(),
-        std::min(output.pixels.size(), model.source().pixels.size())
-    );
+    bool drew_text = false;
     for (const auto& annotation : model.state().annotations) {
-        DrawAnnotation(output, annotation);
+        DrawAnnotation(output, annotation, drew_text);
+    }
+    if (drew_text) {
+        // GDI does not maintain alpha. Preserve the previous opaque-text export
+        // behavior with one pass per render, instead of one pass per text object.
+        for (std::int32_t y = 0; y < output.height; ++y) {
+            for (std::int32_t x = 0; x < output.width; ++x) {
+                output.row(y)[static_cast<std::size_t>(x) * 4 + 3] = std::byte{0xFF};
+            }
+        }
     }
     if (apply_crop) {
         const platform::PixelRect full{0, 0, output.width, output.height};
@@ -423,6 +441,23 @@ capture::PixelBuffer DocumentRenderer::Render(
         }
     }
     return output;
+}
+
+const capture::PixelBuffer& DocumentRenderCache::Render(const DocumentModel& model) {
+    const auto& state = model.state();
+    if (rendered_.empty() || source_ != state.source || annotations_ != state.annotations) {
+        auto rendered = DocumentRenderer::Render(model, false);
+        if (rendered.empty()) {
+            rendered_ = {};
+            source_.reset();
+            annotations_.clear();
+            return rendered_;
+        }
+        annotations_ = state.annotations;
+        source_ = state.source;
+        rendered_ = std::move(rendered);
+    }
+    return rendered_;
 }
 
 }  // namespace screenshooter::editor

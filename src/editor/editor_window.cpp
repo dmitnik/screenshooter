@@ -1190,7 +1190,7 @@ void EditorWindow::Paint() {
     ::SelectObject(dc, old_separator);
     ::DeleteObject(separator);
 
-    const auto rendered = DocumentRenderer::Render(session_.model, false);
+    const auto& rendered = render_cache_.Render(session_.model);
     if (rendered.empty()) {
         finish_paint();
         return;

@@ -596,3 +596,77 @@ TEST_CASE("Text renderer applies size and font styles") {
     REQUIRE(normal != render(24, false, false, true, 0xFFE53935));
     REQUIRE(normal != render(24, false, false, false, 0xFF1E88E5));
 }
+
+TEST_CASE("Preview cache reuses pixels for selection and crop preview only") {
+    screenshooter::editor::DocumentRenderCache cache;
+    DocumentModel model(CreateOpaqueBuffer(160, 100));
+    const auto id = model.Add(Annotation{
+        .kind = AnnotationKind::rectangle, .start = {10, 10}, .end = {60, 50},
+    });
+    const auto* pixels = cache.Render(model).pixels.data();
+    model.Select(id);
+    REQUIRE((cache.Render(model).pixels.data() == pixels));
+    model.Select(std::nullopt);
+    model.SetCrop({20, 20, 80, 60});
+    REQUIRE((cache.Render(model).pixels.data() == pixels));
+    REQUIRE(cache.Render(model).width == 160);
+    REQUIRE(DocumentRenderer::Render(model).width == 60);
+    REQUIRE(model.ApplyCrop());
+    REQUIRE(cache.Render(model).width == 60);
+    REQUIRE((cache.Render(model).pixels == DocumentRenderer::Render(model, false).pixels));
+}
+
+TEST_CASE("Preview cache follows in-place edits undo redo and source replacement") {
+    screenshooter::editor::DocumentRenderCache cache;
+    DocumentModel model(CreateOpaqueBuffer(160, 100));
+    const auto id = model.Add(Annotation{
+        .kind = AnnotationKind::text, .start = {10, 10}, .end = {140, 90},
+        .text = L"Before",
+    });
+    const auto before = model.Snapshot();
+    const auto initial = cache.Render(model);
+    auto* text = model.Find(id);
+    REQUIRE(text != nullptr);
+    text->text = L"After";
+    text->font_bold = true;
+    text->color = 0xFF0000FF;
+    const auto edited = cache.Render(model);
+    REQUIRE((edited.pixels != initial.pixels));
+    REQUIRE((edited.pixels == DocumentRenderer::Render(model, false).pixels));
+    CommandHistory history;
+    history.Commit(before, model.Snapshot());
+    REQUIRE(history.Undo(model));
+    REQUIRE((cache.Render(model).pixels == initial.pixels));
+    REQUIRE(history.Redo(model));
+    REQUIRE((cache.Render(model).pixels == edited.pixels));
+    REQUIRE(model.Remove(id));
+    REQUIRE((cache.Render(model).pixels == model.source().pixels));
+    auto replacement = model.Snapshot();
+    auto source = CreateOpaqueBuffer(160, 100);
+    source.pixels[0] = std::byte{123};
+    replacement.source = std::make_shared<const screenshooter::capture::PixelBuffer>(std::move(source));
+    model.Restore(replacement);
+    REQUIRE((cache.Render(model).pixels == model.source().pixels));
+}
+
+TEST_CASE("Text tiles preserve clipping and wrapping across canvas edges") {
+    for (const auto start : {PixelPoint{-15, -10}, PixelPoint{31, 19}, PixelPoint{95, 65}}) {
+        Annotation text{
+            .kind = AnnotationKind::text, .start = start,
+            .end = {start.x + 120, start.y + 90}, .font_size = 24,
+            .font_bold = true, .font_italic = true, .font_underline = true,
+            .text = L"Unicode: Пример\nwrapped text & more",
+        };
+        DocumentModel clipped(CreateOpaqueBuffer(120, 80));
+        static_cast<void>(clipped.Add(text));
+        DocumentModel padded(CreateOpaqueBuffer(320, 280));
+        text.start.x += 100;
+        text.start.y += 100;
+        text.end.x += 100;
+        text.end.y += 100;
+        static_cast<void>(padded.Add(text));
+        const auto expected = screenshooter::capture::Crop(
+            DocumentRenderer::Render(padded), {100, 100, 220, 180});
+        REQUIRE((DocumentRenderer::Render(clipped).pixels == expected.pixels));
+    }
+}
