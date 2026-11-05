@@ -70,6 +70,10 @@ private:
     void ClearCropSelection();
     void ShowCropActions(bool visible) const;
     void LayoutCropActions() const;
+    [[nodiscard]] platform::PixelRect CropClientRect() const noexcept;
+    [[nodiscard]] platform::CropResizeHandle CropHandleAt(POINT client_point) const noexcept;
+    void UpdateCropCursor(platform::CropResizeHandle handle) const;
+    void CancelCropResize();
     void BeginDocumentAction(POINT client_point);
     void UpdateDocumentAction(POINT client_point, bool constrain_geometry);
     void EndDocumentAction(POINT client_point, bool constrain_geometry);
@@ -151,6 +155,7 @@ private:
     bool resizing_{};
     ResizeHandle resize_handle_{ResizeHandle::none};
     bool crop_drafting_{};
+    platform::CropResizeHandle crop_resize_handle_{platform::CropResizeHandle::none};
     bool crop_selection_ready_{};
     bool crop_release_on_right_{true};
     bool crop_release_on_bottom_{true};

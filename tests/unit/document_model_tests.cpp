@@ -450,6 +450,32 @@ TEST_CASE("Crop preview is non-destructive and controls exported dimensions") {
     REQUIRE(DocumentRenderer::Render(model, false).width == 80);
 }
 
+TEST_CASE("Resized crop exports its final area and applies as one undoable action") {
+    DocumentModel model(CreateOpaqueBuffer(80, 60));
+    const auto before = model.Snapshot();
+    model.SetCrop({10, 15, 70, 50});
+    const auto draft = model.state().crop;
+    const auto resized = screenshooter::platform::ResizeCrop(draft,
+        screenshooter::platform::CropResizeHandle::top_left, {-5, 5}, {0, 0, 80, 60});
+    model.SetCrop(resized);
+    REQUIRE(model.source().width == 80);
+    REQUIRE(model.source().height == 60);
+    const auto preview = DocumentRenderer::Render(model);
+    REQUIRE(preview.width == 65);
+    REQUIRE(preview.height == 30);
+    REQUIRE(model.ApplyCrop());
+    CommandHistory history;
+    history.Commit(before, model.Snapshot());
+    REQUIRE(model.source().width == 65);
+    REQUIRE(model.source().height == 30);
+    REQUIRE(history.Undo(model));
+    REQUIRE(model.state().crop == PixelRect{0, 0, 80, 60});
+    REQUIRE(model.source().width == 80);
+    REQUIRE(history.Redo(model));
+    REQUIRE(model.source().width == 65);
+    REQUIRE(model.source().height == 30);
+}
+
 TEST_CASE("Applied crop becomes the new source and supports another crop") {
     DocumentModel model(CreateOpaqueBuffer(80, 60));
     static_cast<void>(model.Add(Annotation{

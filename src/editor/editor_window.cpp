@@ -1356,14 +1356,9 @@ void EditorWindow::Paint() {
     const platform::PixelRect full{
         0, 0, session_.model.source().width, session_.model.source().height
     };
-    if (session_.model.state().crop != full) {
-        const auto crop = session_.model.state().crop;
-        RECT crop_rect{
-            static_cast<LONG>(std::lround(offset_x_ + (crop.left * scale_))),
-            static_cast<LONG>(std::lround(offset_y_ + (crop.top * scale_))),
-            static_cast<LONG>(std::lround(offset_x_ + (crop.right * scale_))),
-            static_cast<LONG>(std::lround(offset_y_ + (crop.bottom * scale_))),
-        };
+    if (session_.model.state().crop != full || crop_selection_ready_) {
+        const auto crop_client = CropClientRect();
+        const RECT crop_rect{crop_client.left, crop_client.top, crop_client.right, crop_client.bottom};
         const RECT image_rect{
             static_cast<LONG>(std::lround(offset_x_)),
             static_cast<LONG>(std::lround(offset_y_)),
@@ -1384,6 +1379,25 @@ void EditorWindow::Paint() {
         ::SelectObject(dc, old_brush);
         ::SelectObject(dc, old_pen);
         ::DeleteObject(crop_pen);
+        if (tool_ == Tool::crop && crop_selection_ready_) {
+            const int radius = platform::DipToPixels(5, ::GetDpiForWindow(window_));
+            const LONG middle_x = crop_rect.left + (crop_rect.right - crop_rect.left) / 2;
+            const LONG middle_y = crop_rect.top + (crop_rect.bottom - crop_rect.top) / 2;
+            const POINT handles[]{
+                {crop_rect.left, crop_rect.top}, {middle_x, crop_rect.top},
+                {crop_rect.right, crop_rect.top}, {crop_rect.right, middle_y},
+                {crop_rect.right, crop_rect.bottom}, {middle_x, crop_rect.bottom},
+                {crop_rect.left, crop_rect.bottom}, {crop_rect.left, middle_y},
+            };
+            HBRUSH border = ::CreateSolidBrush(RGB(26, 115, 232));
+            for (const auto point : handles) {
+                const RECT handle{point.x - radius, point.y - radius,
+                    point.x + radius + 1, point.y + radius + 1};
+                ::FillRect(dc, &handle, static_cast<HBRUSH>(::GetStockObject(WHITE_BRUSH)));
+                ::FrameRect(dc, &handle, border);
+            }
+            ::DeleteObject(border);
+        }
     }
     if (saved_canvas_dc != 0) {
         ::RestoreDC(dc, saved_canvas_dc);
@@ -1443,13 +1457,7 @@ void EditorWindow::LayoutCropActions() const {
     const int button_height = platform::DipToPixels(kCropActionHeightDip, dpi);
     const int button_gap = platform::DipToPixels(kCropActionGapDip, dpi);
     const int corner_gap = platform::DipToPixels(kCropActionOffsetDip, dpi);
-    const auto crop = session_.model.state().crop;
-    const platform::PixelRect crop_client{
-        static_cast<std::int32_t>(std::lround(offset_x_ + (crop.left * scale_))),
-        static_cast<std::int32_t>(std::lround(offset_y_ + (crop.top * scale_))),
-        static_cast<std::int32_t>(std::lround(offset_x_ + (crop.right * scale_))),
-        static_cast<std::int32_t>(std::lround(offset_y_ + (crop.bottom * scale_))),
-    };
+    const auto crop_client = CropClientRect();
     const auto actions = platform::PlaceCropActions(
         crop_client,
         crop_release_on_right_,
@@ -1490,6 +1498,52 @@ void EditorWindow::LayoutCropActions() const {
     }
 }
 
+platform::PixelRect EditorWindow::CropClientRect() const noexcept {
+    const auto crop = session_.model.state().crop;
+    const auto left = static_cast<std::int32_t>(std::lround(offset_x_ + crop.left * scale_));
+    const auto top = static_cast<std::int32_t>(std::lround(offset_y_ + crop.top * scale_));
+    return {
+        left, top,
+        std::max(left + 1, static_cast<std::int32_t>(std::lround(offset_x_ + crop.right * scale_))),
+        std::max(top + 1, static_cast<std::int32_t>(std::lround(offset_y_ + crop.bottom * scale_))),
+    };
+}
+
+platform::CropResizeHandle EditorWindow::CropHandleAt(const POINT client_point) const noexcept {
+    if (tool_ != Tool::crop || !crop_selection_ready_ || !IsCanvasPoint(client_point)) {
+        return platform::CropResizeHandle::none;
+    }
+    return platform::HitCropResizeHandle(CropClientRect(),
+        {client_point.x, client_point.y}, platform::DipToPixels(8, ::GetDpiForWindow(window_)));
+}
+
+void EditorWindow::UpdateCropCursor(const platform::CropResizeHandle handle) const {
+    using platform::CropResizeHandle;
+    LPCWSTR cursor = IDC_CROSS;
+    switch (handle) {
+    case CropResizeHandle::left:
+    case CropResizeHandle::right: cursor = IDC_SIZEWE; break;
+    case CropResizeHandle::top:
+    case CropResizeHandle::bottom: cursor = IDC_SIZENS; break;
+    case CropResizeHandle::top_left:
+    case CropResizeHandle::bottom_right: cursor = IDC_SIZENWSE; break;
+    case CropResizeHandle::top_right:
+    case CropResizeHandle::bottom_left: cursor = IDC_SIZENESW; break;
+    case CropResizeHandle::none: break;
+    }
+    ::SetCursor(::LoadCursorW(nullptr, cursor));
+}
+
+void EditorWindow::CancelCropResize() {
+    if (crop_resize_handle_ == platform::CropResizeHandle::none) return;
+    crop_resize_handle_ = platform::CropResizeHandle::none;
+    session_.model.SetCrop(action_before_.crop);
+    if (::GetCapture() == window_) ::ReleaseCapture();
+    LayoutCropActions();
+    ShowCropActions(true);
+    InvalidateCanvas();
+}
+
 void EditorWindow::EnterCropMode() {
     if (tool_ == Tool::crop) {
         return;
@@ -1507,6 +1561,7 @@ void EditorWindow::EnterCropMode() {
 }
 
 void EditorWindow::ApplyCrop() {
+    CancelCropResize();
     if (tool_ != Tool::crop) {
         return;
     }
@@ -1528,6 +1583,7 @@ void EditorWindow::ApplyCrop() {
 }
 
 void EditorWindow::CancelCrop() {
+    CancelCropResize();
     if (tool_ != Tool::crop) {
         return;
     }
@@ -1542,6 +1598,7 @@ void EditorWindow::CancelCrop() {
 }
 
 void EditorWindow::ClearCropSelection() {
+    CancelCropResize();
     if (tool_ != Tool::crop || !crop_selection_ready_) {
         return;
     }
@@ -1553,6 +1610,7 @@ void EditorWindow::ClearCropSelection() {
 }
 
 void EditorWindow::ZoomAt(const POINT client_point, const float factor) {
+    CancelCropResize();
     const float document_x = (client_point.x - offset_x_) / scale_;
     const float document_y = (client_point.y - offset_y_) / scale_;
     scale_ = std::clamp(scale_ * factor, 0.1F, 8.0F);
@@ -1782,6 +1840,13 @@ void EditorWindow::BeginDocumentAction(const POINT client_point) {
         return;
     }
     if (tool_ == Tool::crop) {
+        crop_resize_handle_ = CropHandleAt(client_point);
+        if (crop_resize_handle_ != platform::CropResizeHandle::none) {
+            ShowCropActions(false);
+            ::SetCapture(window_);
+            UpdateCropCursor(crop_resize_handle_);
+            return;
+        }
         const auto& source = session_.model.source();
         session_.model.SetCrop({0, 0, source.width, source.height});
         crop_selection_ready_ = false;
@@ -1842,12 +1907,17 @@ void EditorWindow::UpdateDocumentAction(
     const POINT client_point,
     const bool constrain_geometry
 ) {
-    if (!dragging_ && !creating_ && !resizing_ && !crop_drafting_) {
+    if (!dragging_ && !creating_ && !resizing_ && !crop_drafting_ &&
+        crop_resize_handle_ == platform::CropResizeHandle::none) {
         return;
     }
     const auto current = DocumentPoint(client_point);
     last_client_point_ = client_point;
-    if (crop_drafting_) {
+    if (crop_resize_handle_ != platform::CropResizeHandle::none) {
+        session_.model.SetCrop(platform::ResizeCrop(action_before_.crop, crop_resize_handle_,
+            {current.x - action_anchor_.x, current.y - action_anchor_.y}, VisibleDocumentBounds()));
+        UpdateCropCursor(crop_resize_handle_);
+    } else if (crop_drafting_) {
         const auto crop = platform::Intersect(
             platform::Normalize(action_anchor_, current), VisibleDocumentBounds());
         session_.model.SetCrop(crop.empty() ? VisibleDocumentBounds() : crop);
@@ -1893,7 +1963,8 @@ void EditorWindow::EndDocumentAction(
     const POINT client_point,
     const bool constrain_geometry
 ) {
-    if (!dragging_ && !creating_ && !resizing_ && !crop_drafting_) {
+    if (!dragging_ && !creating_ && !resizing_ && !crop_drafting_ &&
+        crop_resize_handle_ == platform::CropResizeHandle::none) {
         return;
     }
     UpdateDocumentAction(client_point, constrain_geometry);
@@ -1909,6 +1980,8 @@ void EditorWindow::EndDocumentAction(
             annotation->end = tip;
         }
     }
+    const bool resized_crop = crop_resize_handle_ != platform::CropResizeHandle::none;
+    crop_resize_handle_ = platform::CropResizeHandle::none;
     ::ReleaseCapture();
     dragging_ = false;
     creating_ = false;
@@ -1925,10 +1998,10 @@ void EditorWindow::EndDocumentAction(
         crop_selection_ready_ = !crop.empty();
     }
     crop_drafting_ = false;
-    if (!completed_crop) {
+    if (!completed_crop && !resized_crop) {
         history_.Commit(action_before_, session_.model.Snapshot());
     }
-    if (completed_crop && crop_selection_ready_) {
+    if ((completed_crop || resized_crop) && crop_selection_ready_) {
         LayoutCropActions();
         ShowCropActions(true);
     }
@@ -2441,8 +2514,28 @@ LRESULT EditorWindow::HandleMessage(
     case WM_LBUTTONDOWN:
         BeginDocumentAction(POINT{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)});
         return 0;
+    case WM_SETCURSOR:
+        if (reinterpret_cast<HWND>(w_param) == window_ && LOWORD(l_param) == HTCLIENT &&
+            tool_ == Tool::crop) {
+            POINT point{};
+            ::GetCursorPos(&point);
+            ::ScreenToClient(window_, &point);
+            if (IsCanvasPoint(point)) {
+                UpdateCropCursor(CropHandleAt(point));
+                return TRUE;
+            }
+        }
+        return ::DefWindowProcW(window_, message, w_param, l_param);
+    case WM_CANCELMODE:
+    case WM_CAPTURECHANGED:
+        CancelCropResize();
+        return ::DefWindowProcW(window_, message, w_param, l_param);
     case WM_LBUTTONDBLCLK: {
         const POINT point{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)};
+        if (tool_ == Tool::crop) {
+            BeginDocumentAction(point);
+            return 0;
+        }
         if (tool_ != Tool::crop && IsCanvasPoint(point) &&
             platform::Contains(VisibleDocumentBounds(), DocumentPoint(point))) {
             const auto hit = session_.model.HitTest(DocumentPoint(point));
@@ -2462,6 +2555,7 @@ LRESULT EditorWindow::HandleMessage(
         );
         return 0;
     case WM_MBUTTONDOWN:
+        CancelCropResize();
         panning_ = true;
         last_pan_ = POINT{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)};
         fit_ = false;
@@ -2502,13 +2596,35 @@ LRESULT EditorWindow::HandleMessage(
             return 0;
         }
         if (w_param == VK_ESCAPE) {
-            if (tool_ == Tool::crop && crop_selection_ready_) {
+            if (crop_resize_handle_ != platform::CropResizeHandle::none) {
+                CancelCropResize();
+            } else if (tool_ == Tool::crop && crop_selection_ready_) {
                 ClearCropSelection();
             } else if (session_.model.state().selected.has_value()) {
                 DeleteSelection();
             } else {
                 ::SendMessageW(window_, WM_CLOSE, 0, 0);
             }
+            return 0;
+        }
+        if (tool_ == Tool::crop && crop_selection_ready_ &&
+            crop_resize_handle_ == platform::CropResizeHandle::none && !crop_drafting_ &&
+            (w_param == VK_LEFT || w_param == VK_RIGHT || w_param == VK_UP || w_param == VK_DOWN)) {
+            using platform::CropResizeHandle;
+            const bool leading = (::GetKeyState(VK_SHIFT) & 0x8000) != 0;
+            const int step = (::GetKeyState(VK_CONTROL) & 0x8000) != 0 ? 10 : 1;
+            const bool horizontal = w_param == VK_LEFT || w_param == VK_RIGHT;
+            const auto handle = horizontal
+                ? (leading ? CropResizeHandle::left : CropResizeHandle::right)
+                : (leading ? CropResizeHandle::top : CropResizeHandle::bottom);
+            const platform::PixelPoint delta{
+                horizontal ? (w_param == VK_LEFT ? -step : step) : 0,
+                horizontal ? 0 : (w_param == VK_UP ? -step : step),
+            };
+            session_.model.SetCrop(platform::ResizeCrop(
+                session_.model.state().crop, handle, delta, VisibleDocumentBounds()));
+            LayoutCropActions();
+            InvalidateCanvas();
             return 0;
         }
         if ((::GetKeyState(VK_CONTROL) & 0x8000) != 0) {

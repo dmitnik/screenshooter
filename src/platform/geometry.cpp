@@ -1,6 +1,7 @@
 #include "platform/geometry.h"
 
 #include <algorithm>
+#include <cstdlib>
 
 namespace screenshooter::platform {
 
@@ -30,6 +31,53 @@ PixelRect Intersect(const PixelRect first, const PixelRect second) noexcept {
 bool Contains(const PixelRect rect, const PixelPoint point) noexcept {
     return point.x >= rect.left && point.x < rect.right &&
         point.y >= rect.top && point.y < rect.bottom;
+}
+
+CropResizeHandle HitCropResizeHandle(
+    const PixelRect crop, const PixelPoint point, const std::int32_t tolerance
+) noexcept {
+    if (crop.empty() || tolerance < 0 ||
+        point.x < crop.left - tolerance || point.x > crop.right + tolerance ||
+        point.y < crop.top - tolerance || point.y > crop.bottom + tolerance) {
+        return CropResizeHandle::none;
+    }
+    // Choose the nearer edge when handles overlap on a small selection.
+    const bool left = std::abs(point.x - crop.left) <= std::abs(point.x - crop.right);
+    const bool top = std::abs(point.y - crop.top) <= std::abs(point.y - crop.bottom);
+    const bool horizontal = std::abs(point.x - (left ? crop.left : crop.right)) <= tolerance;
+    const bool vertical = std::abs(point.y - (top ? crop.top : crop.bottom)) <= tolerance;
+    if (horizontal && vertical) {
+        if (top) return left ? CropResizeHandle::top_left : CropResizeHandle::top_right;
+        return left ? CropResizeHandle::bottom_left : CropResizeHandle::bottom_right;
+    }
+    if (horizontal) return left ? CropResizeHandle::left : CropResizeHandle::right;
+    if (vertical) return top ? CropResizeHandle::top : CropResizeHandle::bottom;
+    return CropResizeHandle::none;
+}
+
+PixelRect ResizeCrop(
+    PixelRect crop, const CropResizeHandle handle, const PixelPoint delta,
+    const PixelRect bounds
+) noexcept {
+    crop = Intersect(crop, bounds);
+    if (crop.empty()) return crop;
+    if (handle == CropResizeHandle::left || handle == CropResizeHandle::top_left ||
+        handle == CropResizeHandle::bottom_left) {
+        crop.left = std::clamp(crop.left + delta.x, bounds.left, crop.right - 1);
+    }
+    if (handle == CropResizeHandle::right || handle == CropResizeHandle::top_right ||
+        handle == CropResizeHandle::bottom_right) {
+        crop.right = std::clamp(crop.right + delta.x, crop.left + 1, bounds.right);
+    }
+    if (handle == CropResizeHandle::top || handle == CropResizeHandle::top_left ||
+        handle == CropResizeHandle::top_right) {
+        crop.top = std::clamp(crop.top + delta.y, bounds.top, crop.bottom - 1);
+    }
+    if (handle == CropResizeHandle::bottom || handle == CropResizeHandle::bottom_left ||
+        handle == CropResizeHandle::bottom_right) {
+        crop.bottom = std::clamp(crop.bottom + delta.y, crop.top + 1, bounds.bottom);
+    }
+    return crop;
 }
 
 PixelRect FitCenteredRect(

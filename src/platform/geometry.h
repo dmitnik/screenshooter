@@ -34,6 +34,18 @@ struct PixelRect {
 [[nodiscard]] PixelRect Normalize(PixelPoint first, PixelPoint second) noexcept;
 [[nodiscard]] PixelRect Intersect(PixelRect first, PixelRect second) noexcept;
 [[nodiscard]] bool Contains(PixelRect rect, PixelPoint point) noexcept;
+enum class CropResizeHandle {
+    none, left, top, right, bottom, top_left, top_right, bottom_left, bottom_right
+};
+
+// Hit-test in client pixels so the caller can keep the tolerance independent of zoom.
+[[nodiscard]] CropResizeHandle HitCropResizeHandle(
+    PixelRect crop, PixelPoint point, std::int32_t tolerance
+) noexcept;
+// Resize from the gesture's original rectangle; keep the opposite edge fixed.
+[[nodiscard]] PixelRect ResizeCrop(
+    PixelRect crop, CropResizeHandle handle, PixelPoint delta, PixelRect bounds
+) noexcept;
 [[nodiscard]] PixelRect FitCenteredRect(
     PixelSize desired,
     PixelSize minimum,
