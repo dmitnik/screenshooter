@@ -200,4 +200,18 @@ if(BUILD_TESTING AND SCREENSHOOTER_BUILD_TESTS)
     if(MSVC)
         target_link_options(localization_ui_smoke PRIVATE /MANIFEST:NO)
     endif()
+
+    add_executable(editor_interaction_ui_smoke EXCLUDE_FROM_ALL
+        tests/integration/editor_interaction_ui_smoke.cpp
+        src/editor/editor_window.cpp
+        src/editor/document_session.cpp
+        resources/app.rc
+    )
+    target_include_directories(editor_interaction_ui_smoke PRIVATE resources)
+    target_link_libraries(editor_interaction_ui_smoke PRIVATE
+        screenshooter_core comctl32 d2d1 dwrite dwmapi shcore)
+    screenshooter_configure_target(editor_interaction_ui_smoke)
+    if(MSVC)
+        target_link_options(editor_interaction_ui_smoke PRIVATE /MANIFEST:NO)
+    endif()
 endif()

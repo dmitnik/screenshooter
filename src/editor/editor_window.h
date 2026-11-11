@@ -85,6 +85,8 @@ private:
         std::optional<AnnotationId> existing = std::nullopt
     );
     void CommitTextEdit();
+    void UpdateTextEditStyle(bool restore_focus);
+    [[nodiscard]] bool IsTextPropertyControl(HWND control) const noexcept;
     void CopySelectedObject();
     void PasteObject();
     static LRESULT CALLBACK TextEditProcedure(

@@ -62,6 +62,7 @@ constexpr int kCropActionHeightDip = 38;
 constexpr int kCropActionGapDip = 6;
 constexpr int kCropActionOffsetDip = 8;
 constexpr UINT kCommitTextEdit = WM_APP + 20;
+constexpr UINT kCheckTextEditFocus = WM_APP + 21;
 
 int ToolIconResourceId(const int control_id) noexcept {
     switch (control_id) {
@@ -885,7 +886,7 @@ void EditorWindow::DrawActionButton(const DRAWITEMSTRUCT& item) const {
 void EditorWindow::DrawColorButton(const DRAWITEMSTRUCT& item) const {
     const UINT dpi = ::GetDpiForWindow(window_);
     const auto selected_id = session_.model.state().selected;
-    const Annotation* selected = selected_id.has_value()
+    const Annotation* selected = text_edit_ == nullptr && selected_id.has_value()
         ? session_.model.Find(*selected_id)
         : nullptr;
     const std::uint32_t displayed_color =
@@ -994,7 +995,7 @@ void EditorWindow::DrawColorButton(const DRAWITEMSTRUCT& item) const {
 
 void EditorWindow::DrawTextStyleButton(const DRAWITEMSTRUCT& item) const {
     const auto selected_id = session_.model.state().selected;
-    const Annotation* selected = selected_id.has_value()
+    const Annotation* selected = text_edit_ == nullptr && selected_id.has_value()
         ? session_.model.Find(*selected_id)
         : nullptr;
     const bool bold = selected != nullptr && selected->kind == AnnotationKind::text
@@ -1072,17 +1073,17 @@ void EditorWindow::DrawFontSizeCombo(const DRAWITEMSTRUCT& item) const {
 
 void EditorWindow::UpdatePropertyControls() {
     const auto selected_id = session_.model.state().selected;
-    const Annotation* selected = selected_id.has_value()
+    const Annotation* selected = text_edit_ == nullptr && selected_id.has_value()
         ? session_.model.Find(*selected_id)
         : nullptr;
     const bool tool_supports_color = tool_ == Tool::rectangle || tool_ == Tool::ellipse ||
         tool_ == Tool::line || tool_ == Tool::arrow || tool_ == Tool::text;
-    const bool color_visible = selected != nullptr
+    const bool color_visible = text_edit_ != nullptr || (selected != nullptr
         ? SupportsColor(selected->kind)
-        : tool_supports_color;
-    const bool text_visible = selected != nullptr
+        : tool_supports_color);
+    const bool text_visible = text_edit_ != nullptr || (selected != nullptr
         ? selected->kind == AnnotationKind::text
-        : tool_ == Tool::text;
+        : tool_ == Tool::text);
     for (const HWND button : {red_button_, green_button_, blue_button_, black_button_}) {
         ::ShowWindow(button, color_visible ? SW_SHOW : SW_HIDE);
         ::InvalidateRect(button, nullptr, FALSE);
@@ -1109,6 +1110,10 @@ void EditorWindow::UpdatePropertyControls() {
 
 void EditorWindow::ChooseColor(const std::uint32_t color) {
     current_color_ = color;
+    if (text_edit_ != nullptr) {
+        UpdateTextEditStyle(true);
+        return;
+    }
     const auto selected_id = session_.model.state().selected;
     Annotation* selected = selected_id.has_value() ? session_.model.Find(*selected_id) : nullptr;
     if (selected != nullptr && SupportsColor(selected->kind) && selected->color != color) {
@@ -1128,6 +1133,10 @@ void EditorWindow::ChooseFontSize() {
     }
     const int size = sizes[selection];
     current_font_size_ = size;
+    if (text_edit_ != nullptr) {
+        UpdateTextEditStyle(false);
+        return;
+    }
     const auto selected_id = session_.model.state().selected;
     Annotation* selected = selected_id.has_value() ? session_.model.Find(*selected_id) : nullptr;
     if (selected != nullptr && selected->kind == AnnotationKind::text &&
@@ -1145,6 +1154,10 @@ void EditorWindow::ToggleTextStyle(const int control_id) {
         : control_id == kItalicButton ? &current_font_italic_
         : &current_font_underline_;
     *current = !*current;
+    if (text_edit_ != nullptr) {
+        UpdateTextEditStyle(true);
+        return;
+    }
     const auto selected_id = session_.model.state().selected;
     Annotation* selected = selected_id.has_value() ? session_.model.Find(*selected_id) : nullptr;
     if (selected != nullptr && selected->kind == AnnotationKind::text) {
@@ -1622,6 +1635,7 @@ void EditorWindow::ZoomAt(const POINT client_point, const float factor) {
 }
 
 void EditorWindow::CopyAndClose() {
+    CommitTextEdit();
     const auto rendered = DocumentRenderer::Render(session_.model);
     if (exporting::ClipboardService::CopyImage(window_, rendered)) {
         closing_after_export_ = true;
@@ -1637,6 +1651,7 @@ void EditorWindow::CopyAndClose() {
 }
 
 void EditorWindow::SaveAs() {
+    CommitTextEdit();
     const auto rendered = DocumentRenderer::Render(session_.model);
     Microsoft::WRL::ComPtr<IFileSaveDialog> dialog;
     if (FAILED(::CoCreateInstance(
@@ -1781,6 +1796,7 @@ void EditorWindow::BeginDocumentAction(const POINT client_point) {
     if (!IsCanvasPoint(client_point)) {
         return;
     }
+    CommitTextEdit();
     ::SetFocus(window_);
     last_client_point_ = client_point;
     last_document_point_ = DocumentPoint(client_point);
@@ -1825,7 +1841,11 @@ void EditorWindow::BeginDocumentAction(const POINT client_point) {
             session_.model.Select(std::nullopt);
             UpdatePropertyControls();
             InvalidateCanvas();
-            return;
+            const bool repeat_drawing = tool_ == Tool::ellipse || tool_ == Tool::rectangle ||
+                tool_ == Tool::line || tool_ == Tool::arrow || tool_ == Tool::marker;
+            if (!repeat_drawing) {
+                return;
+            }
         }
         if (tool_ == Tool::select) {
             session_.model.Select(std::nullopt);
@@ -2111,17 +2131,7 @@ void EditorWindow::BeginTextEdit(
     if (text_region != nullptr && ::SetWindowRgn(text_edit_, text_region, TRUE) == 0) {
         ::DeleteObject(text_region);
     }
-    const int edit_font_size = std::max(
-        8, static_cast<int>(std::lround(current_font_size_ * scale_)));
-    text_edit_font_ = ::CreateFontW(-edit_font_size, 0, 0, 0,
-        current_font_bold_ ? FW_BOLD : FW_NORMAL,
-        current_font_italic_, current_font_underline_, FALSE,
-        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
-    if (text_edit_font_ != nullptr) {
-        ::SendMessageW(text_edit_, WM_SETFONT,
-            reinterpret_cast<WPARAM>(text_edit_font_), TRUE);
-    }
+    UpdateTextEditStyle(false);
     ::SetWindowSubclass(
         text_edit_,
         &EditorWindow::TextEditProcedure,
@@ -2134,6 +2144,52 @@ void EditorWindow::BeginTextEdit(
     ::SetFocus(text_edit_);
     UpdatePropertyControls();
     InvalidateCanvas();
+}
+
+bool EditorWindow::IsTextPropertyControl(const HWND control) const noexcept {
+    if (control == nullptr) {
+        return false;
+    }
+    for (const HWND property : {red_button_, green_button_, blue_button_, black_button_,
+            font_size_combo_, bold_button_, italic_button_, underline_button_}) {
+        if (control == property || ::IsChild(property, control)) {
+            return true;
+        }
+    }
+    COMBOBOXINFO combo{sizeof(combo)};
+    return ::GetComboBoxInfo(font_size_combo_, &combo) && control == combo.hwndList;
+}
+
+void EditorWindow::UpdateTextEditStyle(const bool restore_focus) {
+    if (text_edit_ == nullptr) {
+        return;
+    }
+    DWORD start{}, end{};
+    ::SendMessageW(text_edit_, EM_GETSEL, reinterpret_cast<WPARAM>(&start),
+        reinterpret_cast<LPARAM>(&end));
+    const int size = std::max(8, static_cast<int>(std::lround(current_font_size_ * scale_)));
+    const HFONT font = ::CreateFontW(-size, 0, 0, 0,
+        current_font_bold_ ? FW_BOLD : FW_NORMAL,
+        current_font_italic_, current_font_underline_, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+    if (font != nullptr) {
+        ::SendMessageW(text_edit_, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+        if (text_edit_font_ != nullptr) {
+            ::DeleteObject(text_edit_font_);
+        }
+        text_edit_font_ = font;
+    }
+    ::SendMessageW(text_edit_, EM_SETSEL, start, end);
+    ::InvalidateRect(text_edit_, nullptr, TRUE);
+    // Keep the open size list and its keyboard navigation intact while previewing.
+    for (const HWND property : {red_button_, green_button_, blue_button_, black_button_,
+            bold_button_, italic_button_, underline_button_}) {
+        ::InvalidateRect(property, nullptr, FALSE);
+    }
+    if (restore_focus) {
+        ::SetFocus(text_edit_);
+    }
 }
 
 void EditorWindow::CommitTextEdit() {
@@ -2273,6 +2329,11 @@ LRESULT CALLBACK EditorWindow::ToolButtonProcedure(
     const DWORD_PTR reference_data
 ) {
     auto* editor = reinterpret_cast<EditorWindow*>(reference_data);
+    if (message == WM_KILLFOCUS && editor->text_edit_ != nullptr &&
+        editor->IsTextPropertyControl(window)) {
+        ::PostMessageW(editor->window_, kCheckTextEditFocus,
+            reinterpret_cast<WPARAM>(editor->text_edit_), 0);
+    }
     if (message == WM_KEYDOWN && w_param == VK_TAB) {
         const HWND next = ::GetNextDlgTabItem(editor->window_, window,
             (::GetKeyState(VK_SHIFT) & 0x8000) != 0);
@@ -2405,6 +2466,7 @@ LRESULT EditorWindow::HandleMessage(
         return ::DefWindowProcW(window_, message, w_param, l_param);
     case WM_COMMAND: {
         const auto choose_tool = [this](const Tool next) {
+            CommitTextEdit();
             if (tool_ == Tool::crop && next != Tool::crop) {
                 CancelCrop();
             }
@@ -2414,7 +2476,8 @@ LRESULT EditorWindow::HandleMessage(
         };
         if (reinterpret_cast<HWND>(l_param) == text_edit_ &&
             HIWORD(w_param) == EN_KILLFOCUS) {
-            ::PostMessageW(window_, kCommitTextEdit, 0, 0);
+            ::PostMessageW(window_, kCheckTextEditFocus,
+                reinterpret_cast<WPARAM>(text_edit_), 0);
         } else if (LOWORD(w_param) == kCopyButton) {
             CopyAndClose();
         } else if (LOWORD(w_param) == kFitButton) {
@@ -2467,11 +2530,23 @@ LRESULT EditorWindow::HandleMessage(
             ChooseColor(ColorForControlId(kBlackButton));
         } else if (LOWORD(w_param) == kFontSizeCombo && HIWORD(w_param) == CBN_SELCHANGE) {
             ChooseFontSize();
+        } else if (LOWORD(w_param) == kFontSizeCombo && HIWORD(w_param) == CBN_CLOSEUP) {
+            if (text_edit_ != nullptr && ::GetFocus() == font_size_combo_) {
+                ::SetFocus(text_edit_);
+            }
         } else if (IsTextStyleControlId(LOWORD(w_param))) {
             ToggleTextStyle(LOWORD(w_param));
         }
         return 0;
     }
+    case kCheckTextEditFocus:
+        // A property button/list may keep focus for several messages before its command.
+        // Ignore stale checks belonging to an earlier text editing session.
+        if (text_edit_ == reinterpret_cast<HWND>(w_param) &&
+            ::GetFocus() != text_edit_ && !IsTextPropertyControl(::GetFocus())) {
+            CommitTextEdit();
+        }
+        return 0;
     case kCommitTextEdit:
         CommitTextEdit();
         ::SetFocus(window_);
