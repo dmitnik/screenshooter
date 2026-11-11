@@ -1314,7 +1314,14 @@ void EditorWindow::Paint() {
     if (session_.model.state().selected.has_value()) {
         const Annotation* selected = session_.model.Find(*session_.model.state().selected);
         if (selected != nullptr) {
-            const auto bounds = platform::Normalize(selected->start, selected->end);
+            auto bounds = platform::Normalize(selected->start, selected->end);
+            if (IsStraightMarker(*selected)) {
+                const int radius = (selected->thickness + 1) / 2;
+                bounds.top -= radius;
+                bounds.bottom += radius;
+                bounds.left -= radius;
+                bounds.right += radius;
+            }
             RECT selection{
                 static_cast<LONG>(std::lround(
                     offset_x_ + ((bounds.left - visible_bounds.left) * scale_))),
@@ -1361,6 +1368,10 @@ void EditorWindow::Paint() {
             draw_handle(selected->start);
             if (selected->end != selected->start) {
                 draw_handle(selected->end);
+            }
+            if (IsStraightMarker(*selected)) {
+                draw_handle(MarkerHeightHandle(*selected, ResizeHandle::marker_top));
+                draw_handle(MarkerHeightHandle(*selected, ResizeHandle::marker_bottom));
             }
             ::DeleteObject(handle_border);
             ::DeleteObject(handle_fill);
@@ -1943,13 +1954,25 @@ void EditorWindow::UpdateDocumentAction(
         session_.model.SetCrop(crop.empty() ? VisibleDocumentBounds() : crop);
     } else if (resizing_) {
         if (Annotation* annotation = session_.model.Find(active_annotation_)) {
-            static_cast<void>(ResizeAnnotationEndpoint(
-                *annotation,
-                resize_handle_,
-                current,
-                {},
-                constrain_geometry
-            ));
+            if (resize_handle_ == ResizeHandle::marker_top ||
+                resize_handle_ == ResizeHandle::marker_bottom) {
+                ::SetCursor(::LoadCursorW(nullptr, IDC_SIZENS));
+                const auto& original = *std::find_if(action_before_.annotations.begin(),
+                    action_before_.annotations.end(), [this](const Annotation& value) {
+                        return value.id == active_annotation_;
+                    });
+                const int delta = current.y - action_anchor_.y;
+                annotation->thickness = std::clamp(original.thickness +
+                    (resize_handle_ == ResizeHandle::marker_top ? -2 * delta : 2 * delta), 1, 1000);
+            } else {
+                static_cast<void>(ResizeAnnotationEndpoint(
+                    *annotation,
+                    resize_handle_,
+                    current,
+                    {},
+                    constrain_geometry
+                ));
+            }
         }
     } else if (dragging_) {
         const platform::PixelPoint delta{
@@ -2591,6 +2614,23 @@ LRESULT EditorWindow::HandleMessage(
         return 0;
     case WM_SETCURSOR:
         if (reinterpret_cast<HWND>(w_param) == window_ && LOWORD(l_param) == HTCLIENT &&
+            tool_ != Tool::crop && session_.model.state().selected.has_value()) {
+            const auto* selected = session_.model.Find(*session_.model.state().selected);
+            POINT point{};
+            ::GetCursorPos(&point);
+            ::ScreenToClient(window_, &point);
+            if (selected != nullptr && IsCanvasPoint(point)) {
+                const int tolerance = std::max(4, static_cast<int>(std::ceil(
+                    platform::DipToPixels(8, ::GetDpiForWindow(window_)) / std::max(scale_, 0.1F))));
+                const auto handle = resizing_ ? resize_handle_
+                    : HitResizeHandle(*selected, DocumentPoint(point), tolerance);
+                if (handle == ResizeHandle::marker_top || handle == ResizeHandle::marker_bottom) {
+                    ::SetCursor(::LoadCursorW(nullptr, IDC_SIZENS));
+                    return TRUE;
+                }
+            }
+        }
+        if (reinterpret_cast<HWND>(w_param) == window_ && LOWORD(l_param) == HTCLIENT &&
             tool_ == Tool::crop) {
             POINT point{};
             ::GetCursorPos(&point);
@@ -2742,6 +2782,21 @@ LRESULT EditorWindow::HandleMessage(
             }
             if (w_param == VK_OEM_MINUS || w_param == VK_SUBTRACT) {
                 ZoomAt(POINT{client.right / 2, client.bottom / 2}, 1.0F / 1.1F);
+                return 0;
+            }
+        }
+        if (!creating_ && !dragging_ && !resizing_ && tool_ != Tool::crop &&
+            session_.model.state().selected.has_value() &&
+            (w_param == VK_OEM_PLUS || w_param == VK_ADD ||
+             w_param == VK_OEM_MINUS || w_param == VK_SUBTRACT)) {
+            auto* selected = session_.model.Find(*session_.model.state().selected);
+            if (selected != nullptr && IsStraightMarker(*selected)) {
+                const auto before = session_.model.Snapshot();
+                const int step = (::GetKeyState(VK_SHIFT) & 0x8000) != 0 ? 10 : 1;
+                const bool increase = w_param == VK_OEM_PLUS || w_param == VK_ADD;
+                selected->thickness = std::clamp(selected->thickness + (increase ? step : -step), 1, 1000);
+                history_.Commit(before, session_.model.Snapshot());
+                InvalidateCanvas();
                 return 0;
             }
         }

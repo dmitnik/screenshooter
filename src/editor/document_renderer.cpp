@@ -67,6 +67,30 @@ double DistanceToSegment(
     );
 }
 
+double DistanceToSquareStroke(
+    const double x, const double y,
+    const platform::PixelPoint start, const platform::PixelPoint end
+) noexcept {
+    // Sweep an axis-aligned square nib along the segment. The minimum of this
+    // convex piecewise-linear distance is at an endpoint or |dx| == |dy|.
+    const double dx = end.x - start.x;
+    const double dy = end.y - start.y;
+    const double px = x - start.x;
+    const double py = y - start.y;
+    const auto distance = [&](const double t) {
+        return std::max(std::abs(px - t * dx), std::abs(py - t * dy));
+    };
+    double result = std::min(distance(0.0), distance(1.0));
+    for (const double sign : {-1.0, 1.0}) {
+        const double denominator = dx - sign * dy;
+        if (denominator != 0.0) {
+            result = std::min(result, distance(std::clamp(
+                (px - sign * py) / denominator, 0.0, 1.0)));
+        }
+    }
+    return result;
+}
+
 platform::PixelRect SegmentBounds(
     const platform::PixelPoint start,
     const platform::PixelPoint end,
@@ -115,13 +139,15 @@ void MarkAntialiasedSegment(
     const platform::PixelRect bounds,
     const platform::PixelPoint start,
     const platform::PixelPoint end,
-    const double radius
+    const double radius,
+    const bool square
 ) {
     const auto segment_bounds = SegmentBounds(start, end, radius, bounds);
     for (std::int32_t y = segment_bounds.top; y < segment_bounds.bottom; ++y) {
         for (std::int32_t x = segment_bounds.left; x < segment_bounds.right; ++x) {
             const double amount = std::clamp(
-                radius + 0.5 - DistanceToSegment(x, y, start, end),
+                radius + 0.5 - (square ? DistanceToSquareStroke(x, y, start, end)
+                                     : DistanceToSegment(x, y, start, end)),
                 0.0,
                 1.0
             );
@@ -139,13 +165,14 @@ void DrawStroke(
     capture::PixelBuffer& image,
     const std::vector<platform::PixelPoint>& points,
     const std::int32_t thickness,
-    const std::uint32_t color
+    const std::uint32_t color,
+    const bool square = false
 ) {
-    if (points.size() < 2) {
+    if (points.empty() || (!square && points.size() < 2)) {
         return;
     }
     const double radius = std::max(0.5, thickness / 2.0);
-    if (((color >> 24U) & 0xFFU) == 0xFFU) {
+    if (!square && ((color >> 24U) & 0xFFU) == 0xFFU) {
         for (std::size_t index = 1; index < points.size(); ++index) {
             DrawAntialiasedSegment(
                 image, points[index - 1], points[index], radius, color);
@@ -181,9 +208,12 @@ void DrawStroke(
         static_cast<std::size_t>(bounds.width()) *
         static_cast<std::size_t>(bounds.height())
     );
+    if (points.size() == 1) {
+        MarkAntialiasedSegment(coverage, bounds, points.front(), points.front(), radius, square);
+    }
     for (std::size_t index = 1; index < points.size(); ++index) {
         MarkAntialiasedSegment(
-            coverage, bounds, points[index - 1], points[index], radius);
+            coverage, bounds, points[index - 1], points[index], radius, square);
     }
     for (std::int32_t y = bounds.top; y < bounds.bottom; ++y) {
         for (std::int32_t x = bounds.left; x < bounds.right; ++x) {
@@ -285,7 +315,7 @@ void DrawAnnotation(
         return;
     }
     if (annotation.kind == AnnotationKind::marker) {
-        DrawStroke(image, annotation.points, annotation.thickness, annotation.color);
+        DrawStroke(image, annotation.points, annotation.thickness, annotation.color, true);
         return;
     }
     if (annotation.kind == AnnotationKind::image && annotation.image != nullptr) {

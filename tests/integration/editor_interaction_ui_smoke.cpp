@@ -129,6 +129,57 @@ void CheckSelection(HWND edit) {
     Check(start == 1 && end == 4, "text selection survives property changes");
 }
 
+void CheckMarkerHeight() {
+    auto editor = CreateEditor();
+    Check(editor != nullptr, "marker height editor created");
+    if (!editor) return;
+    const HWND window = editor->window();
+    const auto center = CanvasCenter(window);
+    Click(window, 3108);
+    ::SendMessageW(window, WM_LBUTTONDOWN, MK_LBUTTON | MK_SHIFT,
+        MAKELPARAM(center.x - 140, center.y));
+    ::SendMessageW(window, WM_MOUSEMOVE, MK_LBUTTON | MK_SHIFT,
+        MAKELPARAM(center.x + 140, center.y + 30));
+    ::SendMessageW(window, WM_LBUTTONUP, MK_SHIFT,
+        MAKELPARAM(center.x + 140, center.y + 30));
+    Pump();
+    const RECT band{center.x - 70, center.y - 50, center.x + 70, center.y + 50};
+    const auto initial = Region(window, band);
+    Drag(window, {center.x + 3, center.y - 14}, {center.x + 3, center.y - 14});
+    Check(initial == Region(window, band), "grip click without movement preserves marker thickness");
+    Drag(window, {center.x, center.y - 17}, {center.x, center.y - 37});
+    const auto taller = Region(window, band);
+    Check(initial != taller, "top grip increases straight marker height");
+    BYTE original_keys[256]{};
+    ::GetKeyboardState(original_keys);
+    BYTE keys[256]{};
+    keys[VK_CONTROL] = 0x80;
+    ::SetKeyboardState(keys);
+    ::SendMessageW(window, WM_KEYDOWN, 'Z', 0);
+    Check(initial == Region(window, band), "undo restores original marker height");
+    ::SendMessageW(window, WM_KEYDOWN, 'Y', 0);
+    Check(taller == Region(window, band), "redo restores increased marker height");
+    ::SetKeyboardState(original_keys);
+    ::SetFocus(window);
+    ::SendMessageW(window, WM_KEYDOWN, VK_ADD, 0);
+    Check(taller != Region(window, band), "plus increases selected marker height");
+    ::SendMessageW(window, WM_KEYDOWN, VK_SUBTRACT, 0);
+    Check(taller == Region(window, band), "minus restores previous marker height");
+    keys[VK_CONTROL] = 0;
+    keys[VK_SHIFT] = 0x80;
+    ::SetKeyboardState(keys);
+    ::SendMessageW(window, WM_KEYDOWN, VK_ADD, 0);
+    ::SetKeyboardState(original_keys);
+    for (int step = 0; step < 10; ++step) {
+        ::SendMessageW(window, WM_KEYDOWN, VK_SUBTRACT, 0);
+    }
+    Check(taller == Region(window, band), "Shift plus increases marker height by ten pixels");
+    Drag(window, {center.x, center.y + 37}, {center.x, center.y + 47});
+    Check(taller != Region(window, band), "bottom grip increases marker height");
+    ::DestroyWindow(window);
+    Pump();
+}
+
 void CheckTextProperties() {
     auto editor = CreateEditor();
     Check(editor != nullptr, "text editor created");
@@ -212,6 +263,7 @@ int main() {
     INITCOMMONCONTROLSEX controls{sizeof(controls), ICC_STANDARD_CLASSES};
     ::InitCommonControlsEx(&controls);
     CheckRepeatedDrawing();
+    CheckMarkerHeight();
     CheckTextProperties();
     std::cout << "Editor interaction desktop smoke: " << (failures == 0 ? "PASS" : "FAIL")
         << " (" << failures << " failures)\n";

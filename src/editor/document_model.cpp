@@ -38,6 +38,11 @@ bool Hits(const Annotation& annotation, const platform::PixelPoint point) {
             std::max(kTolerance, annotation.thickness + 3);
     }
     if (annotation.kind == AnnotationKind::marker) {
+        if (annotation.points.size() == 1) {
+            const auto origin = annotation.points.front();
+            return std::max(std::abs(point.x - origin.x), std::abs(point.y - origin.y)) <=
+                (annotation.thickness + 1) / 2 + kTolerance;
+        }
         for (std::size_t index = 1; index < annotation.points.size(); ++index) {
             if (DistanceToSegment(point, annotation.points[index - 1],
                     annotation.points[index]) <=
@@ -170,6 +175,21 @@ platform::PixelPoint ConstrainShapeEnd(
     };
 }
 
+bool IsStraightMarker(const Annotation& annotation) noexcept {
+    return annotation.kind == AnnotationKind::marker &&
+        annotation.start.y == annotation.end.y && annotation.start != annotation.end &&
+        annotation.points.size() == 2 && annotation.points.front() == annotation.start &&
+        annotation.points.back() == annotation.end;
+}
+
+platform::PixelPoint MarkerHeightHandle(
+    const Annotation& annotation, const ResizeHandle handle) noexcept {
+    // Keep the grip outside the translucent stroke, including at minimum thickness.
+    const int offset = (annotation.thickness + 1) / 2 + 8;
+    return {annotation.start.x + (annotation.end.x - annotation.start.x) / 2,
+        annotation.start.y + (handle == ResizeHandle::marker_top ? -offset : offset)};
+}
+
 ResizeHandle HitResizeHandle(
     const Annotation& annotation,
     const platform::PixelPoint point,
@@ -189,6 +209,11 @@ ResizeHandle HitResizeHandle(
     if (end_distance <= tolerance) {
         return ResizeHandle::end;
     }
+    if (IsStraightMarker(annotation)) {
+        for (const auto handle : {ResizeHandle::marker_top, ResizeHandle::marker_bottom}) {
+            if (distance(MarkerHeightHandle(annotation, handle)) <= tolerance) return handle;
+        }
+    }
     return ResizeHandle::none;
 }
 
@@ -201,6 +226,13 @@ bool ResizeAnnotationEndpoint(
 ) noexcept {
     if (handle == ResizeHandle::none) {
         return false;
+    }
+    if (handle == ResizeHandle::marker_top || handle == ResizeHandle::marker_bottom) {
+        if (!IsStraightMarker(annotation)) return false;
+        const int distance = handle == ResizeHandle::marker_top
+            ? annotation.start.y - point.y : point.y - annotation.start.y;
+        annotation.thickness = std::clamp(2 * (distance - 8), 1, 1000);
+        return true;
     }
     if (constrain && annotation.kind == AnnotationKind::image &&
         annotation.image != nullptr && annotation.image->width > 0 &&

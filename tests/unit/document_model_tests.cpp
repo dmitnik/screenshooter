@@ -271,6 +271,68 @@ TEST_CASE("Shift marker discards freehand points and becomes one straight line")
     REQUIRE(marker.points == std::vector<PixelPoint>{{10, 20}, {70, 20}});
 }
 
+TEST_CASE("Straight marker height grips change rendered thickness and support history") {
+    DocumentModel model(CreateOpaqueBuffer(240, 160));
+    const auto id = model.Add(Annotation{.kind = AnnotationKind::marker,
+        .start = {30, 80}, .end = {210, 80}, .thickness = 18,
+        .points = {{30, 80}, {210, 80}}});
+    auto* marker = model.Find(id);
+    REQUIRE(screenshooter::editor::IsStraightMarker(*marker));
+    REQUIRE(HitResizeHandle(*marker, {120, 63}, 8) == ResizeHandle::marker_top);
+    REQUIRE(HitResizeHandle(*marker, {120, 97}, 8) == ResizeHandle::marker_bottom);
+    const auto before = model.Snapshot();
+    const auto original = DocumentRenderer::Render(model);
+    REQUIRE(ResizeAnnotationEndpoint(*marker, ResizeHandle::marker_top, {160, 52}, {}, false));
+    REQUIRE(marker->thickness == 40);
+    REQUIRE(marker->points == before.annotations.front().points);
+    REQUIRE(marker->start == PixelPoint{30, 80});
+    REQUIRE(marker->end == PixelPoint{210, 80});
+    const bool pixels_changed = DocumentRenderer::Render(model).pixels != original.pixels;
+    REQUIRE(pixels_changed);
+    CommandHistory history;
+    history.Commit(before, model.Snapshot());
+    REQUIRE(history.Undo(model));
+    REQUIRE(model.Find(id)->thickness == 18);
+    REQUIRE(history.Redo(model));
+    marker = model.Find(id);
+    REQUIRE(marker->thickness == 40);
+    REQUIRE(ResizeAnnotationEndpoint(*marker, ResizeHandle::marker_bottom, {120, 108}, {}, true));
+    REQUIRE(marker->thickness == 40);
+    REQUIRE(ResizeAnnotationEndpoint(*marker, ResizeHandle::marker_top, {120, 120}, {}, false));
+    REQUIRE(marker->thickness == 1);
+    REQUIRE(ResizeAnnotationEndpoint(*marker, ResizeHandle::marker_bottom, {120, 10000}, {}, false));
+    REQUIRE(marker->thickness == 1000);
+}
+
+TEST_CASE("Freehand markers do not expose height grips") {
+    Annotation marker{.kind = AnnotationKind::marker, .start = {20, 50}, .end = {180, 50},
+        .thickness = 18, .points = {{20, 50}, {90, 80}, {180, 50}}};
+    REQUIRE_FALSE(screenshooter::editor::IsStraightMarker(marker));
+    REQUIRE(HitResizeHandle(marker, {100, 33}, 8) == ResizeHandle::none);
+    REQUIRE_FALSE(ResizeAnnotationEndpoint(marker, ResizeHandle::marker_top, {100, 20}, {}, false));
+    REQUIRE(marker.thickness == 18);
+}
+
+TEST_CASE("Marker uses a square nib from the first point and keeps square stroke ends") {
+    for (const auto& points : {std::vector<PixelPoint>{{30, 30}},
+            std::vector<PixelPoint>{{30, 30}, {70, 30}},
+            std::vector<PixelPoint>{{30, 30}, {70, 60}}}) {
+        DocumentModel model(CreateOpaqueBuffer(100, 100));
+        static_cast<void>(model.Add(Annotation{.kind = AnnotationKind::marker,
+            .start = points.front(), .end = points.back(), .color = 0x80FF0000,
+            .thickness = 18, .points = points}));
+        const auto rendered = DocumentRenderer::Render(model);
+        // A round nib leaves these corner pixels empty.
+        REQUIRE(model.HitTest({22, 22}).has_value());
+        for (const auto point : {PixelPoint{22, 22}, PixelPoint{22, 38},
+                PixelPoint{points.back().x + 8, points.back().y - 8},
+                PixelPoint{points.back().x + 8, points.back().y + 8}}) {
+            REQUIRE(std::to_integer<unsigned>(rendered.row(point.y)[point.x * 4 + 2]) == 128U);
+        }
+        REQUIRE(std::to_integer<unsigned>(rendered.row(30)[19 * 4 + 2]) == 0U);
+    }
+}
+
 TEST_CASE("Transparent marker blends each covered pixel only once") {
     auto source = CreateOpaqueBuffer(40, 30);
     for (auto& value : source.pixels) {

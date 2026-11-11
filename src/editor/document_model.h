@@ -28,9 +28,15 @@ enum class ResizeHandle {
     none,
     start,
     end,
+    marker_top,
+    marker_bottom,
 };
 
 struct Annotation;
+
+[[nodiscard]] bool IsStraightMarker(const Annotation& annotation) noexcept;
+[[nodiscard]] platform::PixelPoint MarkerHeightHandle(
+    const Annotation& annotation, ResizeHandle handle) noexcept;
 
 [[nodiscard]] platform::PixelPoint DefaultArrowStart(
     platform::PixelPoint end,
